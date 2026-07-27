@@ -1,6 +1,6 @@
 import { createPhoto, getHotdog, getPhotos, getPhotosForHotdog, isDemoMode, likePhoto, unlikePhoto } from "./data.js";
 import { getDogChallenge } from "./challenges.js";
-import { EVENT_GUIDE_PAGES, EVENT_NEIGHBORHOODS } from "./event-data.js";
+import { EVENT_NEIGHBORHOODS, EVENT_ORGANIZER } from "./event-data.js";
 import { reverseGeocode, searchPlaces } from "./geocode.js";
 import { preparePhoto } from "./image.js";
 import {
@@ -22,7 +22,6 @@ let feedSort = "newest";
 let mapInstance = null;
 let locationMapInstance = null;
 let mapDisplayMode = "map";
-let eventGuideIndex = 0;
 let uploadState = freshUploadState();
 
 const PREFERENCES_KEY = "clt-hotdog-preferences";
@@ -964,65 +963,26 @@ function neighborhoodMarkup() {
   `).join("");
 }
 
-function guideViewerMarkup() {
-  const page = EVENT_GUIDE_PAGES[eventGuideIndex] || EVENT_GUIDE_PAGES[0];
+function organizerCardMarkup() {
   return `
-    <section class="event-section" id="official-guide" aria-labelledby="official-guide-title">
-      <div class="event-section-heading">
-        <div>
-          <p class="event-eyebrow"><span aria-hidden="true">📖</span> Official visual guide</p>
-          <h2 id="official-guide-title">Browse one page at a time</h2>
-          <p>The text sections above cover the essentials. These guide pages include the full specials, maps, passport rewards, and event artwork.</p>
+    <section class="event-organizer-card" aria-labelledby="event-organizer-title">
+      <div class="event-organizer-icon" aria-hidden="true">◎</div>
+      <div class="event-organizer-copy">
+        <p class="event-eyebrow"><span aria-hidden="true">📣</span> Official event source</p>
+        <h2 id="event-organizer-title">Follow the organizer on Instagram</h2>
+        <p>For the latest crawl updates, participating locations, specials, maps, and any day-of changes, view the official post from <strong>${escapeHtml(EVENT_ORGANIZER.handle)}</strong>.</p>
+        <div class="event-organizer-actions">
+          <a class="primary-button" href="${escapeHtml(EVENT_ORGANIZER.postUrl)}" target="_blank" rel="noopener noreferrer">
+            <span aria-hidden="true">↗</span> Open the official event post
+          </a>
+          <a class="secondary-button" href="${escapeHtml(EVENT_ORGANIZER.profileUrl)}" target="_blank" rel="noopener noreferrer">
+            <span aria-hidden="true">◎</span> Visit ${escapeHtml(EVENT_ORGANIZER.handle)}
+          </a>
         </div>
-      </div>
-      <div class="guide-controls">
-        <label for="event-guide-select">Guide page</label>
-        <select class="text-input" id="event-guide-select">
-          ${EVENT_GUIDE_PAGES.map((item, index) => `<option value="${index}" ${index === eventGuideIndex ? "selected" : ""}>${index + 1}. ${escapeHtml(item.title)}</option>`).join("")}
-        </select>
-      </div>
-      <figure class="event-guide-viewer">
-        <a id="event-guide-link" href="${escapeHtml(page.src)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(page.title)} as a full-size image in a new tab">
-          <img id="event-guide-image" src="${escapeHtml(page.src)}" alt="${escapeHtml(page.alt)}" decoding="async" />
-        </a>
-        <figcaption>
-          <strong id="event-guide-title">${escapeHtml(page.title)}</strong>
-          <span id="event-guide-count">Page ${eventGuideIndex + 1} of ${EVENT_GUIDE_PAGES.length}</span>
-        </figcaption>
-      </figure>
-      <div class="guide-pagination" aria-label="Official guide page controls">
-        <button class="secondary-button" id="previous-guide-page" ${eventGuideIndex === 0 ? "disabled" : ""}><span aria-hidden="true">←</span> Previous</button>
-        <button class="secondary-button" id="next-guide-page" ${eventGuideIndex === EVENT_GUIDE_PAGES.length - 1 ? "disabled" : ""}>Next <span aria-hidden="true">→</span></button>
+        <p class="event-external-note"><span aria-hidden="true">ℹ️</span> Instagram links open in a new tab or in the Instagram app when supported.</p>
       </div>
     </section>
   `;
-}
-
-function updateEventGuide(index) {
-  const clamped = Math.max(0, Math.min(EVENT_GUIDE_PAGES.length - 1, Number(index) || 0));
-  eventGuideIndex = clamped;
-  const page = EVENT_GUIDE_PAGES[eventGuideIndex];
-  const image = document.getElementById("event-guide-image");
-  const link = document.getElementById("event-guide-link");
-  const title = document.getElementById("event-guide-title");
-  const count = document.getElementById("event-guide-count");
-  const select = document.getElementById("event-guide-select");
-  const previous = document.getElementById("previous-guide-page");
-  const next = document.getElementById("next-guide-page");
-  if (image) {
-    image.src = page.src;
-    image.alt = page.alt;
-  }
-  if (link) {
-    link.href = page.src;
-    link.setAttribute("aria-label", `Open ${page.title} as a full-size image in a new tab`);
-  }
-  if (title) title.textContent = page.title;
-  if (count) count.textContent = `Page ${eventGuideIndex + 1} of ${EVENT_GUIDE_PAGES.length}`;
-  if (select) select.value = String(eventGuideIndex);
-  if (previous) previous.disabled = eventGuideIndex === 0;
-  if (next) next.disabled = eventGuideIndex === EVENT_GUIDE_PAGES.length - 1;
-  document.querySelector(".event-guide-viewer")?.scrollIntoView({ behavior: preferences.reduceMotion ? "auto" : "smooth", block: "nearest" });
 }
 
 function attachEventEvents() {
@@ -1031,9 +991,6 @@ function attachEventEvents() {
       document.getElementById(button.dataset.eventSection)?.scrollIntoView({ behavior: preferences.reduceMotion ? "auto" : "smooth", block: "start" });
     });
   });
-  document.getElementById("event-guide-select")?.addEventListener("change", (event) => updateEventGuide(event.target.value));
-  document.getElementById("previous-guide-page")?.addEventListener("click", () => updateEventGuide(eventGuideIndex - 1));
-  document.getElementById("next-guide-page")?.addEventListener("click", () => updateEventGuide(eventGuideIndex + 1));
 }
 
 function renderEventPage() {
@@ -1049,9 +1006,11 @@ function renderEventPage() {
         <p>Plaza Midwood and beyond, with participating stops in Uptown, NoDa, South End, and LoSo. This page is a quick, accessible summary of the event guide.</p>
         <div class="event-hero-actions">
           <a class="primary-button" href="#/feed${dogQuery}"><span aria-hidden="true">▦</span> Open the photo feed</a>
-          <button class="secondary-button" type="button" data-event-section="official-guide"><span aria-hidden="true">📖</span> View the full guide</button>
+          <a class="secondary-button" href="${escapeHtml(EVENT_ORGANIZER.postUrl)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↗</span> Official Instagram post</a>
         </div>
       </section>
+
+      ${organizerCardMarkup()}
 
       <section class="event-at-a-glance" aria-label="Event at a glance">
         <div><span aria-hidden="true">📍</span><strong>5</strong><span>Neighborhoods</span></div>
@@ -1108,10 +1067,9 @@ function renderEventPage() {
 
       <aside class="event-note" aria-label="Event information note">
         <span aria-hidden="true">ℹ️</span>
-        <p>This community photo website is separate from the organizer's official guide. Specials, hours, availability, and entry rules may change. Check the venue and official event posts on the day of the crawl.</p>
+        <p>This community photo website is an independent companion to the crawl and is not the official event page. Specials, hours, availability, and entry rules may change. Check the official Instagram post from ${escapeHtml(EVENT_ORGANIZER.handle)} and participating venues on the day of the crawl.</p>
       </aside>
 
-      ${guideViewerMarkup()}
     </main>
   `;
   app.innerHTML = shell(content, "event", "Hot Dog Bar Crawl event details");
