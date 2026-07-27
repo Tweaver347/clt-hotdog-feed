@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="t d">
+  <title id="t">Hot dog keychain in Uptown Charlotte</title><desc id="d">Stylized test image for the photo feed.</desc>
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#3f5682"/><stop offset="1" stop-color="#e99078"/></linearGradient></defs>
+  <rect width="1200" height="900" fill="url(#g)"/>
+  <g fill="#1c2942"><rect x="50" y="320" width="190" height="580"/><rect x="260" y="210" width="170" height="690"/><rect x="450" y="100" width="240" height="800"/><rect x="710" y="255" width="190" height="645"/><rect x="920" y="365" width="230" height="535"/></g>
+  <g fill="#f4d78a" opacity=".8"><path d="M490 150h35v55h-35zm65 0h35v55h-35zm65 0h35v55h-35zM490 235h35v55h-35zm65 0h35v55h-35zm65 0h35v55h-35zM490 320h35v55h-35zm65 0h35v55h-35zm65 0h35v55h-35z"/></g>
+  <g transform="translate(610 590) rotate(7)">
+    <ellipse cx="0" cy="180" rx="270" ry="55" fill="#121b2a" opacity=".35"/>
+    <rect x="-300" width="600" height="220" rx="110" fill="#e4aa61"/>
+    <rect x="-245" y="38" width="490" height="142" rx="70" fill="#ac342d"/>
+    <path d="M-205 107 C-140 35 -85 175 -20 105 S105 35 165 110 S215 150 245 92" fill="none" stroke="#f3cb3d" stroke-width="27" stroke-linecap="round"/>
+    <circle cx="-284" cy="-18" r="34" fill="#f7ead7" stroke="#6e4b36" stroke-width="15"/>
+  </g>
+  <text x="58" y="84" font-family="system-ui,sans-serif" font-size="58" font-weight="800" fill="#fff">UPTOWN</text>
+  <text x="60" y="137" font-family="system-ui,sans-serif" font-size="30" fill="#fff">Demo photo · Hot Dog #7</text>
+</svg>

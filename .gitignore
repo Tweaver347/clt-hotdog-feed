@@ -1,0 +1,17 @@
+# Local Supabase configuration
+config.js
+
+# Cloudflare build output
+dist/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Operating-system files
+.DS_Store
+Thumbs.db

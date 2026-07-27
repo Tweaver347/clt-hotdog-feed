@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="t d">
+  <title id="t">Hot dog keychain on the South End Rail Trail</title><desc id="d">Stylized test image for the photo feed.</desc>
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#a8d1d0"/><stop offset="1" stop-color="#f1c88d"/></linearGradient></defs>
+  <rect width="1200" height="900" fill="url(#g)"/>
+  <rect y="480" width="1200" height="420" fill="#6f9a64"/>
+  <path d="M420 900 L560 470 H650 L810 900Z" fill="#c6b69d"/>
+  <path d="M520 900 L596 470" stroke="#705d4b" stroke-width="15"/><path d="M710 900 L615 470" stroke="#705d4b" stroke-width="15"/>
+  <g fill="#4e7654"><circle cx="170" cy="450" r="160"/><circle cx="1050" cy="420" r="190"/></g>
+  <g transform="translate(610 570) rotate(-3)">
+    <ellipse cx="0" cy="180" rx="275" ry="60" fill="#243326" opacity=".28"/>
+    <rect x="-305" width="610" height="225" rx="112" fill="#e5ab62"/>
+    <rect x="-250" y="38" width="500" height="145" rx="72" fill="#b43a2e"/>
+    <path d="M-215 108 C-150 40 -90 175 -28 105 S90 36 150 108 S215 155 245 90" fill="none" stroke="#efc53a" stroke-width="28" stroke-linecap="round"/>
+    <circle cx="-290" cy="-18" r="34" fill="#f7ead7" stroke="#6e4b36" stroke-width="15"/>
+  </g>
+  <text x="58" y="84" font-family="system-ui,sans-serif" font-size="58" font-weight="800" fill="#fff">SOUTH END</text>
+  <text x="60" y="137" font-family="system-ui,sans-serif" font-size="30" fill="#fff">Demo photo · Hot Dog #9</text>
+</svg>
