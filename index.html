@@ -3,9 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#f7ead7" />
+    <meta name="theme-color" content="#fffaf2" />
     <meta name="description" content="A community photo feed and map for Charlotte's hot dog crawl." />
     <title>CLT Hot Dog Feed</title>
+    <script>
+      (() => {
+        try {
+          const saved = JSON.parse(localStorage.getItem("clt-hotdog-preferences") || "{}");
+          const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const theme = saved.theme === "dark" || saved.theme === "light"
+            ? saved.theme
+            : systemDark ? "dark" : "light";
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.dataset.textScale = saved.textScale || "default";
+          document.documentElement.classList.toggle("high-contrast", Boolean(saved.highContrast));
+          document.documentElement.classList.toggle("reduce-motion", Boolean(saved.reduceMotion));
+          document.documentElement.classList.toggle("hide-decorations", saved.showDecorations === false);
+          document.documentElement.classList.toggle("underline-links", Boolean(saved.underlineLinks));
+        } catch {}
+      })();
+    </script>
     <link rel="preconnect" href="https://unpkg.com" />
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />

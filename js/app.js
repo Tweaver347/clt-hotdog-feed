@@ -19,6 +19,192 @@ let mapInstance = null;
 let locationMapInstance = null;
 let uploadState = freshUploadState();
 
+const PREFERENCES_KEY = "clt-hotdog-preferences";
+const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+const systemMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+let settingsReturnFocus = null;
+let parallaxFrame = null;
+
+function defaultPreferences() {
+  return {
+    theme: "system",
+    textScale: "default",
+    highContrast: false,
+    reduceMotion: systemMotionQuery.matches,
+    showDecorations: true,
+    underlineLinks: false
+  };
+}
+
+function loadPreferences() {
+  try {
+    return { ...defaultPreferences(), ...JSON.parse(localStorage.getItem(PREFERENCES_KEY) || "{}") };
+  } catch {
+    return defaultPreferences();
+  }
+}
+
+let preferences = loadPreferences();
+
+function resolvedTheme() {
+  if (preferences.theme === "light" || preferences.theme === "dark") return preferences.theme;
+  return systemDarkQuery.matches ? "dark" : "light";
+}
+
+function savePreferences() {
+  localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+}
+
+function applyPreferences() {
+  const root = document.documentElement;
+  const theme = resolvedTheme();
+  root.dataset.theme = theme;
+  root.dataset.themePreference = preferences.theme;
+  root.dataset.textScale = preferences.textScale;
+  root.classList.toggle("high-contrast", Boolean(preferences.highContrast));
+  root.classList.toggle("reduce-motion", Boolean(preferences.reduceMotion));
+  root.classList.toggle("hide-decorations", !preferences.showDecorations);
+  root.classList.toggle("underline-links", Boolean(preferences.underlineLinks));
+
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) themeMeta.content = theme === "dark" ? "#17120f" : "#fffaf2";
+  updateThemeButton();
+  updateParallax();
+}
+
+function updateThemeButton() {
+  const button = document.getElementById("theme-toggle");
+  if (!button) return;
+  const theme = resolvedTheme();
+  button.textContent = theme === "dark" ? "☀" : "☾";
+  button.setAttribute("aria-label", `Switch to ${theme === "dark" ? "light" : "dark"} mode`);
+  button.title = `Switch to ${theme === "dark" ? "light" : "dark"} mode`;
+}
+
+function setPreference(name, value) {
+  preferences = { ...preferences, [name]: value };
+  savePreferences();
+  applyPreferences();
+}
+
+function accessibilityPanelMarkup() {
+  return `
+    <div class="settings-backdrop" id="settings-backdrop" hidden></div>
+    <aside class="settings-panel" id="accessibility-panel" role="dialog" aria-modal="true" aria-labelledby="accessibility-title" hidden>
+      <div class="settings-header">
+        <div>
+          <p class="settings-eyebrow">Display preferences</p>
+          <h2 id="accessibility-title" tabindex="-1">Accessibility & appearance</h2>
+        </div>
+        <button class="icon-button" id="close-accessibility" aria-label="Close accessibility settings">×</button>
+      </div>
+
+      <fieldset class="settings-group">
+        <legend>Color theme</legend>
+        <div class="choice-grid" role="radiogroup" aria-label="Color theme">
+          ${["system", "light", "dark"].map((value) => `
+            <label class="choice-chip">
+              <input type="radio" name="theme-choice" value="${value}" ${preferences.theme === value ? "checked" : ""} />
+              <span>${value === "system" ? "System" : value[0].toUpperCase() + value.slice(1)}</span>
+            </label>
+          `).join("")}
+        </div>
+      </fieldset>
+
+      <div class="settings-group">
+        <label class="field" for="text-size-choice">
+          <span class="field-label">Text size</span>
+          <select class="text-input" id="text-size-choice">
+            <option value="default" ${preferences.textScale === "default" ? "selected" : ""}>Default</option>
+            <option value="large" ${preferences.textScale === "large" ? "selected" : ""}>Large</option>
+            <option value="xlarge" ${preferences.textScale === "xlarge" ? "selected" : ""}>Extra large</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="settings-group settings-switches">
+        <label class="preference-row">
+          <span><strong>High contrast</strong><small>Strengthens borders and text contrast.</small></span>
+          <input type="checkbox" id="high-contrast-choice" ${preferences.highContrast ? "checked" : ""} />
+        </label>
+        <label class="preference-row">
+          <span><strong>Reduce motion</strong><small>Stops parallax and most interface animation.</small></span>
+          <input type="checkbox" id="reduce-motion-choice" ${preferences.reduceMotion ? "checked" : ""} />
+        </label>
+        <label class="preference-row">
+          <span><strong>Playful background</strong><small>Shows the hot dog, mustard, and ketchup pattern.</small></span>
+          <input type="checkbox" id="decorations-choice" ${preferences.showDecorations ? "checked" : ""} />
+        </label>
+        <label class="preference-row">
+          <span><strong>Underline links</strong><small>Makes linked text easier to identify.</small></span>
+          <input type="checkbox" id="underline-links-choice" ${preferences.underlineLinks ? "checked" : ""} />
+        </label>
+      </div>
+
+      <button class="secondary-button" id="reset-preferences">Reset display preferences</button>
+    </aside>
+  `;
+}
+
+function openAccessibilityPanel() {
+  const panel = document.getElementById("accessibility-panel");
+  const backdrop = document.getElementById("settings-backdrop");
+  const trigger = document.getElementById("open-accessibility");
+  if (!panel || !backdrop) return;
+  settingsReturnFocus = document.activeElement;
+  panel.hidden = false;
+  backdrop.hidden = false;
+  trigger?.setAttribute("aria-expanded", "true");
+  document.body.classList.add("settings-open");
+  window.setTimeout(() => document.getElementById("accessibility-title")?.focus(), 0);
+}
+
+function closeAccessibilityPanel() {
+  const panel = document.getElementById("accessibility-panel");
+  const backdrop = document.getElementById("settings-backdrop");
+  const trigger = document.getElementById("open-accessibility");
+  if (!panel || panel.hidden) return;
+  panel.hidden = true;
+  if (backdrop) backdrop.hidden = true;
+  trigger?.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("settings-open");
+  settingsReturnFocus?.focus?.();
+}
+
+function trapSettingsFocus(event) {
+  if (event.key !== "Tab") return;
+  const panel = document.getElementById("accessibility-panel");
+  if (!panel || panel.hidden) return;
+  const focusable = [...panel.querySelectorAll('button, input, select, [href], [tabindex]:not([tabindex="-1"])')]
+    .filter((element) => !element.disabled && !element.hidden);
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function updateParallax() {
+  if (parallaxFrame) return;
+  parallaxFrame = window.requestAnimationFrame(() => {
+    parallaxFrame = null;
+    const root = document.documentElement;
+    if (preferences.reduceMotion || !preferences.showDecorations) {
+      root.style.setProperty("--parallax-slow", "0px");
+      root.style.setProperty("--parallax-fast", "0px");
+      return;
+    }
+    const y = window.scrollY || 0;
+    root.style.setProperty("--parallax-slow", `${-((y * 0.055) % 320)}px`);
+    root.style.setProperty("--parallax-fast", `${-((y * 0.11) % 320)}px`);
+  });
+}
+
 function freshUploadState(dogCode = "") {
   return {
     dogCode,
@@ -48,8 +234,12 @@ function destroyMaps() {
 function shell(content, activeTab = "feed", subtitle = "Charlotte community photo feed") {
   const activeDog = getActiveDog();
   const dogQuery = activeDog ? `?dog=${encodeURIComponent(activeDog)}` : "";
+  const theme = resolvedTheme();
   return `
     <div class="app-shell">
+      <a class="skip-link" href="#main-content">Skip to main content</a>
+      <div class="food-pattern food-pattern-slow" aria-hidden="true"></div>
+      <div class="food-pattern food-pattern-fast" aria-hidden="true"></div>
       <header class="topbar">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true">🌭</div>
@@ -58,17 +248,21 @@ function shell(content, activeTab = "feed", subtitle = "Charlotte community phot
             <p class="brand-subtitle">${escapeHtml(subtitle)}</p>
           </div>
         </div>
-        <button class="icon-button" id="refresh-page" aria-label="Refresh page">↻</button>
+        <div class="topbar-actions">
+          <button class="icon-button" id="theme-toggle" aria-label="Switch to ${theme === "dark" ? "light" : "dark"} mode" title="Switch to ${theme === "dark" ? "light" : "dark"} mode">${theme === "dark" ? "☀" : "☾"}</button>
+          <button class="icon-button text-icon-button" id="open-accessibility" aria-label="Open accessibility and appearance settings" aria-controls="accessibility-panel" aria-expanded="false">Aa</button>
+        </div>
       </header>
-      ${content}
+      ${accessibilityPanelMarkup()}
+      <div id="main-content" class="route-content" tabindex="-1">${content}</div>
       <nav class="bottom-nav" aria-label="Primary navigation">
-        <a class="nav-item ${activeTab === "feed" ? "active" : ""}" href="#/feed${dogQuery}">
+        <a class="nav-item ${activeTab === "feed" ? "active" : ""}" href="#/feed${dogQuery}" ${activeTab === "feed" ? 'aria-current="page"' : ""}>
           <span class="nav-icon" aria-hidden="true">▦</span><span>Feed</span>
         </a>
-        <a class="nav-item add ${activeTab === "upload" ? "active" : ""}" href="#/upload${dogQuery}">
+        <a class="nav-item add ${activeTab === "upload" ? "active" : ""}" href="#/upload${dogQuery}" ${activeTab === "upload" ? 'aria-current="page"' : ""}>
           <span class="nav-icon" aria-hidden="true">＋</span><span>Add Photo</span>
         </a>
-        <a class="nav-item ${activeTab === "map" ? "active" : ""}" href="#/map">
+        <a class="nav-item ${activeTab === "map" ? "active" : ""}" href="#/map" ${activeTab === "map" ? 'aria-current="page"' : ""}>
           <span class="nav-icon" aria-hidden="true">⌖</span><span>Map</span>
         </a>
       </nav>
@@ -77,11 +271,34 @@ function shell(content, activeTab = "feed", subtitle = "Charlotte community phot
 }
 
 function attachShellEvents() {
-  document.getElementById("refresh-page")?.addEventListener("click", () => route(true));
+  document.getElementById("theme-toggle")?.addEventListener("click", () => {
+    setPreference("theme", resolvedTheme() === "dark" ? "light" : "dark");
+  });
+  document.getElementById("open-accessibility")?.addEventListener("click", openAccessibilityPanel);
+  document.getElementById("close-accessibility")?.addEventListener("click", closeAccessibilityPanel);
+  document.getElementById("settings-backdrop")?.addEventListener("click", closeAccessibilityPanel);
+  document.getElementById("accessibility-panel")?.addEventListener("keydown", trapSettingsFocus);
+
+  document.querySelectorAll('input[name="theme-choice"]').forEach((input) => {
+    input.addEventListener("change", (event) => setPreference("theme", event.target.value));
+  });
+  document.getElementById("text-size-choice")?.addEventListener("change", (event) => setPreference("textScale", event.target.value));
+  document.getElementById("high-contrast-choice")?.addEventListener("change", (event) => setPreference("highContrast", event.target.checked));
+  document.getElementById("reduce-motion-choice")?.addEventListener("change", (event) => setPreference("reduceMotion", event.target.checked));
+  document.getElementById("decorations-choice")?.addEventListener("change", (event) => setPreference("showDecorations", event.target.checked));
+  document.getElementById("underline-links-choice")?.addEventListener("change", (event) => setPreference("underlineLinks", event.target.checked));
+  document.getElementById("reset-preferences")?.addEventListener("click", () => {
+    preferences = defaultPreferences();
+    savePreferences();
+    applyPreferences();
+    route(true);
+    showToast("Display preferences reset.");
+  });
+  applyPreferences();
 }
 
 function loadingMarkup(label = "Loading photos…") {
-  return `<div class="loading"><div><div class="spinner" aria-hidden="true"></div><div>${escapeHtml(label)}</div></div></div>`;
+  return `<div class="loading" role="status" aria-live="polite"><div><div class="spinner" aria-hidden="true"></div><div>${escapeHtml(label)}</div></div></div>`;
 }
 
 function demoNotice() {
@@ -122,7 +339,7 @@ function photoCard(photo, likedIds) {
             <div class="location-sub">${escapeHtml(photo.location_detail || "Charlotte")} · ${escapeHtml(dogLabel(photo))} · ${escapeHtml(formatRelativeTime(photo.created_at))}</div>
           </div>
         </div>
-        <button class="like-button ${liked ? "liked" : ""}" data-like-photo="${escapeHtml(photo.id)}" ${liked ? "disabled" : ""} aria-label="${liked ? "Photo liked" : "Like photo"}">
+        <button class="like-button ${liked ? "liked" : ""}" data-like-photo="${escapeHtml(photo.id)}" ${liked ? "disabled" : ""} aria-label="${liked ? "Photo liked" : "Like photo"}" aria-pressed="${liked ? "true" : "false"}">
           <span class="heart" aria-hidden="true">${liked ? "♥" : "♡"}</span>
           <span data-like-count>${Number(photo.like_count || 0)}</span>
         </button>
@@ -168,8 +385,8 @@ async function renderFeed(routeInfo) {
         <div class="feed-toolbar">
           <h2>Photo feed</h2>
           <div class="segmented" aria-label="Sort photos">
-            <button data-sort="newest" class="${feedSort === "newest" ? "active" : ""}">Newest</button>
-            <button data-sort="top" class="${feedSort === "top" ? "active" : ""}">Top</button>
+            <button data-sort="newest" class="${feedSort === "newest" ? "active" : ""}" aria-pressed="${feedSort === "newest" ? "true" : "false"}">Newest</button>
+            <button data-sort="top" class="${feedSort === "top" ? "active" : ""}" aria-pressed="${feedSort === "top" ? "true" : "false"}">Top</button>
           </div>
         </div>
         ${feedMarkup}
@@ -219,6 +436,8 @@ function attachLikeButtons() {
       try {
         const result = await likePhoto(photoId);
         button.classList.add("liked");
+        button.setAttribute("aria-pressed", "true");
+        button.setAttribute("aria-label", "Photo liked");
         button.querySelector(".heart").textContent = "♥";
         if (!result.duplicate) {
           const count = button.querySelector("[data-like-count]");
@@ -348,14 +567,21 @@ function uploadMarkup() {
             <button class="small-button" id="remove-photo">Change photo</button>
           </div>
         ` : `
-          <div class="upload-drop">
-            <label for="photo-input">
-              <div class="upload-icon" aria-hidden="true">📸</div>
-              <strong>Take or choose a photo</strong>
-              <span>JPEG, PNG, WebP, or a phone camera image</span>
+          <div class="photo-source-grid">
+            <label class="photo-source-button camera-source" for="camera-photo-input">
+              <span class="photo-source-icon" aria-hidden="true">📸</span>
+              <strong>Take a photo</strong>
+              <small>Open the rear camera for an in-the-moment picture.</small>
             </label>
-            <input id="photo-input" type="file" accept="image/*" capture="environment" />
+            <label class="photo-source-button library-source" for="library-photo-input">
+              <span class="photo-source-icon" aria-hidden="true">🖼️</span>
+              <strong>Choose from library</strong>
+              <small>Select an existing photo from your phone or computer.</small>
+            </label>
+            <input class="sr-only-file" id="camera-photo-input" type="file" accept="image/*" capture="environment" />
+            <input class="sr-only-file" id="library-photo-input" type="file" accept="image/*" />
           </div>
+          <p class="photo-source-help">Your browser may combine these choices into one photo picker depending on the device.</p>
         `}
       </section>
 
@@ -408,7 +634,8 @@ function attachUploadEvents() {
       renderUpload(getRoute());
     });
   });
-  document.getElementById("photo-input")?.addEventListener("change", handlePhotoInput);
+  document.getElementById("camera-photo-input")?.addEventListener("change", handlePhotoInput);
+  document.getElementById("library-photo-input")?.addEventListener("change", handlePhotoInput);
   document.getElementById("remove-photo")?.addEventListener("click", () => {
     uploadState.preparedPhoto = null;
     renderUpload(getRoute());
@@ -563,7 +790,16 @@ async function route(force = false) {
 }
 
 window.addEventListener("hashchange", () => route());
+window.addEventListener("scroll", updateParallax, { passive: true });
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeAccessibilityPanel();
+});
+systemDarkQuery.addEventListener?.("change", () => {
+  if (preferences.theme === "system") applyPreferences();
+});
 window.addEventListener("DOMContentLoaded", () => {
+  applyPreferences();
+  updateParallax();
   if (!window.location.hash) window.location.hash = "#/feed";
   else route();
 });
