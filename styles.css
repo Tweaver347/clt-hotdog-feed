@@ -1801,13 +1801,16 @@ html[data-theme="dark"] .modern-map-shell .leaflet-tile-pane {
   .like-button { flex: none; min-width: 78px; min-height: 44px; padding: 8px 10px; }
 
   .bottom-nav {
-    left: 7px;
-    right: 7px;
+    left: max(7px, env(safe-area-inset-left));
+    right: max(7px, env(safe-area-inset-right));
     bottom: calc(6px + env(safe-area-inset-bottom));
     width: auto;
     max-width: none;
     min-height: 64px;
+    margin: 0;
     padding: 5px;
+    transform: none;
+    box-sizing: border-box;
     border-radius: 22px;
   }
   .nav-item { min-height: 53px; padding: 3px 1px; font-size: calc(10px * var(--text-scale)); }
