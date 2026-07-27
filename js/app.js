@@ -77,7 +77,12 @@ let feedSort = "newest";
 let mapInstance = null;
 let locationMapInstance = null;
 let mapDisplayMode = "map";
+let mapNeighborhoodFilter = "All";
+let mapUserMarker = null;
+let mapVisibleBounds = [];
 let uploadState = freshUploadState();
+
+const MAP_NEIGHBORHOODS = ["All", "Plaza Midwood", "NoDa", "Uptown", "South End", "LoSo", "Other Charlotte"];
 
 const PREFERENCES_KEY = "clt-hotdog-preferences";
 const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -339,7 +344,7 @@ function shell(content, activeTab = "feed", subtitle = "Charlotte community phot
           <span class="nav-icon" aria-hidden="true">▦</span><span>Feed</span>
         </a>
         <a class="nav-item add ${activeTab === "upload" ? "active" : ""}" href="#/upload${dogQuery}" ${activeTab === "upload" ? 'aria-current="page"' : ""}>
-          <span class="nav-icon" aria-hidden="true">＋</span><span>Add Photo</span>
+          <span class="nav-icon" aria-hidden="true">＋</span><span>Add</span>
         </a>
         <a class="nav-item ${activeTab === "journey" ? "active" : ""}" href="#/journey${dogQuery}" ${activeTab === "journey" ? 'aria-current="page"' : ""}>
           <span class="nav-icon" aria-hidden="true">↝</span><span>Journey</span>
@@ -412,7 +417,7 @@ function photoCard(photo, likedIds) {
   return `
     <article class="photo-card" id="photo-${escapeHtml(photo.id)}">
       <div class="photo-media">
-        <img src="${escapeHtml(photo.image_url)}" alt="Community hot dog crawl photo near ${escapeHtml(photo.place_name)}" loading="lazy" />
+        <img src="${escapeHtml(photo.image_url)}" alt="Community hot dog crawl photo near ${escapeHtml(photo.place_name)}" loading="lazy" decoding="async" />
       </div>
       <div class="photo-meta">
         <div class="location-line">
@@ -471,11 +476,11 @@ async function renderFeed(routeInfo) {
       : `<div class="empty-state"><div class="empty-icon">📷</div><h2>No photos yet</h2><p>Be the first person to add a Charlotte hot dog crawl photo.</p><button class="primary-button" data-add-photo>Add the first photo</button></div>`;
 
     const content = `
-      <main class="page">
+      <main class="page feed-page">
         ${demoNotice()}
         ${activeDogMarkup}
         ${communityCounterMarkup(photos)}
-        <section class="hero-card">
+        <section class="hero-card feed-hero">
           <h1>Charlotte, one hot dog at a time.</h1>
           <p>Scan a printed dog, add one photo and a location, then watch the city-wide feed grow.</p>
           <button class="primary-button" data-add-photo>📷 Add your photo</button>
@@ -509,10 +514,12 @@ async function renderFeed(routeInfo) {
 
     attachLikeButtons();
 
-    const uploadedId = routeInfo.params.get("uploaded");
-    if (uploadedId) {
+    const focusedPhotoId = routeInfo.params.get("uploaded") || routeInfo.params.get("focus");
+    if (focusedPhotoId) {
       window.setTimeout(() => {
-        document.getElementById(`photo-${uploadedId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        const focusedCard = document.getElementById(`photo-${focusedPhotoId}`);
+        focusedCard?.classList.add("photo-card-focused");
+        focusedCard?.scrollIntoView({ behavior: preferences.reduceMotion ? "auto" : "smooth", block: "center" });
       }, 100);
     }
   } catch (error) {
@@ -565,14 +572,58 @@ function attachLikeButtons() {
   });
 }
 
+function neighborhoodForPhoto(photo) {
+  const haystack = `${photo.location_detail || ""} ${photo.place_name || ""}`.toLowerCase();
+  if (haystack.includes("plaza midwood") || haystack.includes("the plaza")) return "Plaza Midwood";
+  if (haystack.includes("noda") || haystack.includes("north davidson")) return "NoDa";
+  if (haystack.includes("uptown") || haystack.includes("center city")) return "Uptown";
+  if (haystack.includes("south end") || haystack.includes("southend")) return "South End";
+  if (haystack.includes("loso") || haystack.includes("lower south end")) return "LoSo";
+  return "Other Charlotte";
+}
+
+function filteredMapPhotos(photos) {
+  if (mapNeighborhoodFilter === "All") return photos;
+  return photos.filter((photo) => neighborhoodForPhoto(photo) === mapNeighborhoodFilter);
+}
+
+function mapNeighborhoodFiltersMarkup(photos) {
+  const counts = new Map(MAP_NEIGHBORHOODS.map((name) => [name, 0]));
+  counts.set("All", photos.length);
+  photos.forEach((photo) => {
+    const neighborhood = neighborhoodForPhoto(photo);
+    counts.set(neighborhood, (counts.get(neighborhood) || 0) + 1);
+  });
+  const visible = MAP_NEIGHBORHOODS.filter((name) => name === "All" || (counts.get(name) || 0) > 0);
+  return `
+    <div class="neighborhood-filter-wrap" aria-label="Filter map by neighborhood">
+      <div class="neighborhood-filters">
+        ${visible.map((name) => `
+          <button class="neighborhood-chip ${mapNeighborhoodFilter === name ? "active" : ""}" data-map-neighborhood="${escapeHtml(name)}" aria-pressed="${mapNeighborhoodFilter === name ? "true" : "false"}">
+            <span>${escapeHtml(name)}</span><span class="chip-count">${counts.get(name) || 0}</span>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
 function groupPhotosByLocation(photos) {
   const groups = new Map();
   photos.forEach((photo) => {
-    const key = `${photo.place_name}|${photo.location_detail || "Charlotte"}`;
+    const latitude = Number(photo.latitude);
+    const longitude = Number(photo.longitude);
+    const coordinateKey = Number.isFinite(latitude) && Number.isFinite(longitude)
+      ? `${latitude.toFixed(4)}|${longitude.toFixed(4)}`
+      : "no-coordinate";
+    const key = `${photo.place_name}|${photo.location_detail || "Charlotte"}|${coordinateKey}`;
     if (!groups.has(key)) {
       groups.set(key, {
         placeName: photo.place_name,
         locationDetail: photo.location_detail || "Charlotte",
+        neighborhood: neighborhoodForPhoto(photo),
+        latitude,
+        longitude,
         photos: [],
         dogs: new Set(),
         likes: 0
@@ -586,63 +637,126 @@ function groupPhotosByLocation(photos) {
   return [...groups.values()].sort((a, b) => b.photos.length - a.photos.length || a.placeName.localeCompare(b.placeName));
 }
 
+function feedLinkForPhoto(photoId) {
+  const activeDog = getActiveDog();
+  const params = new URLSearchParams();
+  if (activeDog) params.set("dog", activeDog);
+  params.set("focus", photoId);
+  return `/feed?${params.toString()}`;
+}
+
 function mapTextListMarkup(photos) {
   const groups = groupPhotosByLocation(photos);
   if (!groups.length) {
-    return `<div class="empty-state"><div class="empty-icon">📍</div><h2>No locations yet</h2><p>Locations will appear after the first photo is added.</p></div>`;
+    return `<div class="empty-state"><div class="empty-icon">📍</div><h2>No locations here yet</h2><p>Try another neighborhood or add the first photo from this area.</p></div>`;
   }
+  const neighborhoods = [...new Set(groups.map((group) => group.neighborhood))]
+    .sort((a, b) => MAP_NEIGHBORHOODS.indexOf(a) - MAP_NEIGHBORHOODS.indexOf(b));
   return `
     <section class="map-text-view" aria-labelledby="map-list-title">
-      <h2 id="map-list-title">Photo locations</h2>
-      <p class="section-help">A text alternative to the interactive map, ordered by number of photos.</p>
-      <ul class="location-list">
-        ${groups.map((group) => `
-          <li class="location-list-item">
-            <div class="location-list-heading"><span aria-hidden="true">📍</span><div><strong>${escapeHtml(group.placeName)}</strong><span>${escapeHtml(group.locationDetail)}</span></div></div>
-            <dl class="location-list-stats">
-              <div><dt>Photos</dt><dd>${group.photos.length}</dd></div>
-              <div><dt>Dogs</dt><dd>${group.dogs.size}</dd></div>
-              <div><dt>Likes</dt><dd>${group.likes}</dd></div>
-            </dl>
-          </li>
-        `).join("")}
-      </ul>
+      <div class="map-list-heading">
+        <div><h2 id="map-list-title">Locations in ${escapeHtml(mapNeighborhoodFilter)}</h2><p class="section-help">The same community locations as the map, organized for easy reading and keyboard access.</p></div>
+        <span class="map-result-count">${groups.length} stop${groups.length === 1 ? "" : "s"}</span>
+      </div>
+      <div class="neighborhood-location-groups">
+        ${neighborhoods.map((neighborhood) => {
+          const neighborhoodGroups = groups.filter((group) => group.neighborhood === neighborhood);
+          const photoCount = neighborhoodGroups.reduce((sum, group) => sum + group.photos.length, 0);
+          return `
+            <section class="neighborhood-location-section" aria-labelledby="neighborhood-${escapeHtml(neighborhood).replace(/\s+/g, "-")}">
+              <div class="neighborhood-location-heading">
+                <h3 id="neighborhood-${escapeHtml(neighborhood).replace(/\s+/g, "-")}">${escapeHtml(neighborhood)}</h3>
+                <span>${photoCount} photo${photoCount === 1 ? "" : "s"}</span>
+              </div>
+              <ul class="location-list">
+                ${neighborhoodGroups.map((group) => {
+                  const latest = group.photos[0];
+                  return `
+                    <li class="location-list-item">
+                      <img class="location-list-thumb" src="${escapeHtml(latest.image_url)}" alt="" loading="lazy" decoding="async" />
+                      <div class="location-list-copy">
+                        <strong>${escapeHtml(group.placeName)}</strong>
+                        <span>${escapeHtml(group.locationDetail)}</span>
+                        <span>${group.photos.length} photo${group.photos.length === 1 ? "" : "s"} · ${group.dogs.size} dog${group.dogs.size === 1 ? "" : "s"} · ${group.likes} like${group.likes === 1 ? "" : "s"}</span>
+                      </div>
+                      <button class="small-button location-list-action" data-map-feed-photo="${escapeHtml(latest.id)}"><span aria-hidden="true">↗</span> View</button>
+                    </li>
+                  `;
+                }).join("")}
+              </ul>
+            </section>
+          `;
+        }).join("")}
+      </div>
     </section>
+  `;
+}
+
+function mapCanvasMarkup(photos) {
+  return `
+    <div class="map-stage">
+      <div class="map-shell modern-map-shell">
+        <div id="photo-map" aria-label="Interactive map showing submitted community photos"></div>
+        <div class="map-status-pill"><span aria-hidden="true">📷</span><strong>${photos.length}</strong><span>photo${photos.length === 1 ? "" : "s"}</span></div>
+        <div class="map-floating-actions" aria-label="Map controls">
+          <button class="map-control-button" id="map-near-me"><span aria-hidden="true">⌖</span><span>Near me</span></button>
+          <button class="map-control-button" id="map-show-all"><span aria-hidden="true">⊙</span><span>Show all</span></button>
+        </div>
+        <aside class="map-photo-sheet" id="map-photo-sheet" aria-live="polite" hidden></aside>
+      </div>
+    </div>
   `;
 }
 
 async function renderMapPage() {
   destroyMaps();
+  mapUserMarker = null;
+  mapVisibleBounds = [];
   app.innerHTML = shell(`<main class="page-wide">${loadingMarkup("Building the map…")}</main>`, "map", "All community photos across Charlotte");
   attachShellEvents();
 
   try {
     const photos = await getPhotos("newest");
-    const viewMarkup = mapDisplayMode === "map"
-      ? `<div class="map-shell"><div class="map-overlay"><div class="map-pill"><span aria-hidden="true">📷</span> ${photos.length} photo${photos.length === 1 ? "" : "s"}</div><div class="map-pill"><span aria-hidden="true">📍</span> Charlotte, NC</div></div><div id="photo-map" aria-label="Map showing submitted community photos"></div></div>`
-      : mapTextListMarkup(photos);
+    const visiblePhotos = filteredMapPhotos(photos);
+    const viewMarkup = mapDisplayMode === "map" ? mapCanvasMarkup(visiblePhotos) : mapTextListMarkup(visiblePhotos);
     const content = `
-      <main class="page-wide">
+      <main class="page-wide map-page">
         ${demoNotice()}
-        <div class="view-toolbar">
-          <div><h1>Community photo map</h1><p>Explore the event visually or switch to the accessible text list.</p></div>
+        <div class="view-toolbar modern-map-toolbar">
+          <div><p class="map-eyebrow">Explore Charlotte</p><h1>Community map</h1><p>See where the hot dogs have traveled, or use the text view for a simpler list.</p></div>
           <div class="segmented" aria-label="Map display">
             <button data-map-view="map" class="${mapDisplayMode === "map" ? "active" : ""}" aria-pressed="${mapDisplayMode === "map" ? "true" : "false"}"><span aria-hidden="true">🗺️</span> Map</button>
-            <button data-map-view="text" class="${mapDisplayMode === "text" ? "active" : ""}" aria-pressed="${mapDisplayMode === "text" ? "true" : "false"}"><span aria-hidden="true">☷</span> Text</button>
+            <button data-map-view="text" class="${mapDisplayMode === "text" ? "active" : ""}" aria-pressed="${mapDisplayMode === "text" ? "true" : "false"}"><span aria-hidden="true">☷</span> List</button>
           </div>
         </div>
+        ${mapNeighborhoodFiltersMarkup(photos)}
         ${viewMarkup}
       </main>
     `;
     app.innerHTML = shell(content, "map", "All community photos across Charlotte");
     attachShellEvents();
+
     document.querySelectorAll("[data-map-view]").forEach((button) => {
       button.addEventListener("click", () => {
         mapDisplayMode = button.dataset.mapView;
         renderMapPage();
       });
     });
-    if (mapDisplayMode === "map") initializePhotoMap(photos);
+    document.querySelectorAll("[data-map-neighborhood]").forEach((button) => {
+      button.addEventListener("click", () => {
+        mapNeighborhoodFilter = button.dataset.mapNeighborhood;
+        renderMapPage();
+      });
+    });
+    document.querySelectorAll("[data-map-feed-photo]").forEach((button) => {
+      button.addEventListener("click", () => navigate(feedLinkForPhoto(button.dataset.mapFeedPhoto)));
+    });
+
+    if (mapDisplayMode === "map") {
+      initializePhotoMap(visiblePhotos);
+      document.getElementById("map-show-all")?.addEventListener("click", fitVisibleMapMarkers);
+      document.getElementById("map-near-me")?.addEventListener("click", centerMapNearUser);
+    }
   } catch (error) {
     app.innerHTML = shell(`<main class="page"><div class="empty-state"><div class="empty-icon">🗺️</div><h2>Could not load the map</h2><p>${escapeHtml(error.message)}</p></div></main>`, "map");
     attachShellEvents();
@@ -651,8 +765,8 @@ async function renderMapPage() {
 
 function initializeBaseMap(elementId, center, zoom) {
   if (!window.L) throw new Error("The map library did not load. Check your internet connection.");
-  const map = window.L.map(elementId, { zoomControl: false }).setView(center, zoom);
-  window.L.control.zoom({ position: "bottomright" }).addTo(map);
+  const map = window.L.map(elementId, { zoomControl: false, attributionControl: true }).setView(center, zoom);
+  window.L.control.zoom({ position: "topright" }).addTo(map);
   window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -662,30 +776,86 @@ function initializeBaseMap(elementId, center, zoom) {
 
 function initializePhotoMap(photos) {
   mapInstance = initializeBaseMap("photo-map", config.mapCenter || [35.2271, -80.8431], config.mapZoom || 11);
-  const bounds = [];
-  photos.forEach((photo) => {
-    const latLng = [Number(photo.latitude), Number(photo.longitude)];
-    if (!Number.isFinite(latLng[0]) || !Number.isFinite(latLng[1])) return;
-    bounds.push(latLng);
+  const groups = groupPhotosByLocation(photos).filter((group) => Number.isFinite(group.latitude) && Number.isFinite(group.longitude));
+  mapVisibleBounds = groups.map((group) => [group.latitude, group.longitude]);
+
+  groups.forEach((group) => {
+    const latest = group.photos[0];
     const icon = window.L.divIcon({
-      className: "",
-      html: `<div class="photo-map-marker"><img src="${escapeHtml(photo.image_url)}" alt="" /></div>`,
-      iconSize: [48, 48],
-      iconAnchor: [12, 45],
-      popupAnchor: [12, -43]
+      className: "modern-map-icon-wrap",
+      html: `<div class="modern-map-marker"><img src="${escapeHtml(latest.image_url)}" alt="" /><span class="modern-map-marker-count" aria-hidden="true">${group.photos.length}</span></div>`,
+      iconSize: [58, 66],
+      iconAnchor: [29, 63]
     });
-    window.L.marker(latLng, { icon })
+    window.L.marker([group.latitude, group.longitude], {
+      icon,
+      title: `${group.placeName}, ${group.photos.length} photo${group.photos.length === 1 ? "" : "s"}`,
+      keyboard: true,
+      riseOnHover: true
+    })
       .addTo(mapInstance)
-      .bindPopup(`
-        <div class="map-popup">
-          <img src="${escapeHtml(photo.image_url)}" alt="Community photo near ${escapeHtml(photo.place_name)}" />
-          <strong>📍 ${escapeHtml(photo.place_name)}</strong>
-          <span>${escapeHtml(dogLabel(photo))} · ♥ ${Number(photo.like_count || 0)}</span>
-        </div>
-      `);
+      .on("click", () => openMapPhotoSheet(group));
   });
-  if (bounds.length > 1) mapInstance.fitBounds(bounds, { padding: [55, 55], maxZoom: 14 });
-  else if (bounds.length === 1) mapInstance.setView(bounds[0], 14);
+
+  fitVisibleMapMarkers();
+}
+
+function fitVisibleMapMarkers() {
+  if (!mapInstance) return;
+  if (mapVisibleBounds.length > 1) mapInstance.fitBounds(mapVisibleBounds, { padding: [62, 62], maxZoom: 15 });
+  else if (mapVisibleBounds.length === 1) mapInstance.setView(mapVisibleBounds[0], 15);
+  else mapInstance.setView(config.mapCenter || [35.2271, -80.8431], config.mapZoom || 11);
+}
+
+function centerMapNearUser() {
+  if (!navigator.geolocation) {
+    showToast("Location is not supported by this browser.", "error");
+    return;
+  }
+  const button = document.getElementById("map-near-me");
+  if (button) button.disabled = true;
+  navigator.geolocation.getCurrentPosition((position) => {
+    if (!mapInstance) return;
+    const latLng = [position.coords.latitude, position.coords.longitude];
+    if (mapUserMarker) mapUserMarker.remove();
+    mapUserMarker = window.L.circleMarker(latLng, {
+      radius: 9,
+      color: "#ffffff",
+      weight: 4,
+      fillColor: "#b7332c",
+      fillOpacity: 1
+    }).addTo(mapInstance).bindTooltip("You are here", { permanent: false, direction: "top" });
+    mapInstance.setView(latLng, 14);
+    showToast("Map centered near you. Your location was not saved.");
+    if (button) button.disabled = false;
+  }, (error) => {
+    showToast(error.code === 1 ? "Location permission was declined." : "Could not find your location.", "error");
+    if (button) button.disabled = false;
+  }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+}
+
+function openMapPhotoSheet(group) {
+  const sheet = document.getElementById("map-photo-sheet");
+  if (!sheet) return;
+  const latest = group.photos[0];
+  const previewPhotos = group.photos.slice(0, 3);
+  sheet.hidden = false;
+  sheet.innerHTML = `
+    <button class="map-sheet-close" id="close-map-sheet" aria-label="Close selected location">×</button>
+    <div class="map-sheet-handle" aria-hidden="true"></div>
+    <div class="map-sheet-content">
+      <img class="map-sheet-main-image" src="${escapeHtml(latest.image_url)}" alt="Community photo near ${escapeHtml(group.placeName)}" />
+      <div class="map-sheet-copy">
+        <p class="map-sheet-neighborhood">${escapeHtml(group.neighborhood)}</p>
+        <h2>${escapeHtml(group.placeName)}</h2>
+        <p>${escapeHtml(group.locationDetail)} · ${group.photos.length} photo${group.photos.length === 1 ? "" : "s"} · ${group.dogs.size} dog${group.dogs.size === 1 ? "" : "s"} · ${group.likes} like${group.likes === 1 ? "" : "s"}</p>
+        ${previewPhotos.length > 1 ? `<div class="map-sheet-thumbnails">${previewPhotos.map((photo) => `<img src="${escapeHtml(photo.image_url)}" alt="" loading="lazy" />`).join("")}</div>` : ""}
+        <button class="primary-button map-sheet-feed-button" data-map-feed-photo="${escapeHtml(latest.id)}"><span aria-hidden="true">▦</span> View in feed</button>
+      </div>
+    </div>
+  `;
+  sheet.querySelector("#close-map-sheet")?.addEventListener("click", () => { sheet.hidden = true; });
+  sheet.querySelector("[data-map-feed-photo]")?.addEventListener("click", (event) => navigate(feedLinkForPhoto(event.currentTarget.dataset.mapFeedPhoto)));
 }
 
 function uploadMarkup() {
