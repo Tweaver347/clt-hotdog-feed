@@ -82,8 +82,39 @@ export function markPhotoLiked(photoId) {
   localStorage.setItem("clt-hotdog-liked", JSON.stringify([...ids]));
 }
 
+export function unmarkPhotoLiked(photoId) {
+  const ids = getLikedPhotoIds();
+  ids.delete(photoId);
+  localStorage.setItem("clt-hotdog-liked", JSON.stringify([...ids]));
+}
+
 export function setActiveDog(code) {
-  if (code) localStorage.setItem("clt-hotdog-active-dog", code.toUpperCase());
+  if (!code) return;
+  const normalized = code.toUpperCase();
+  const existing = getActiveDogDetails();
+  if (existing?.public_code !== normalized) {
+    localStorage.removeItem("clt-hotdog-active-dog-details");
+  }
+  localStorage.setItem("clt-hotdog-active-dog", normalized);
+}
+
+export function setActiveDogDetails(dog) {
+  if (!dog?.public_code) return;
+  setActiveDog(dog.public_code);
+  localStorage.setItem("clt-hotdog-active-dog-details", JSON.stringify({
+    public_code: dog.public_code,
+    printed_number: dog.printed_number ?? null
+  }));
+}
+
+export function getActiveDogDetails() {
+  try {
+    const details = JSON.parse(localStorage.getItem("clt-hotdog-active-dog-details") || "null");
+    const activeCode = localStorage.getItem("clt-hotdog-active-dog");
+    return details?.public_code === activeCode ? details : null;
+  } catch {
+    return null;
+  }
 }
 
 export function getActiveDog() {

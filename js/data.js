@@ -4,7 +4,8 @@ import {
   getOrCreateDeviceId,
   markPhotoLiked,
   randomId,
-  sha256
+  sha256,
+  unmarkPhotoLiked
 } from "./utils.js";
 
 const DEMO_PHOTOS_KEY = "clt-hotdog-demo-photos-v1";
@@ -177,6 +178,30 @@ export async function getHotdog(code) {
   return result[0] || null;
 }
 
+
+export async function getPhotosForHotdog(code, sort = "oldest") {
+  const dog = await getHotdog(code);
+  if (!dog) return { dog: null, photos: [] };
+
+  if (isDemoMode()) {
+    const photos = getDemoPhotos()
+      .filter((photo) => photo.hotdog_code === dog.public_code)
+      .sort((a, b) => {
+        if (sort === "top") return b.like_count - a.like_count || new Date(b.created_at) - new Date(a.created_at);
+        if (sort === "newest") return new Date(b.created_at) - new Date(a.created_at);
+        return new Date(a.created_at) - new Date(b.created_at);
+      });
+    return { dog, photos };
+  }
+
+  const order = sort === "top"
+    ? "like_count.desc,created_at.desc"
+    : sort === "newest" ? "created_at.desc" : "created_at.asc";
+  const select = "id,image_path,latitude,longitude,place_name,location_detail,location_source,like_count,created_at,hotdogs(public_code,printed_number)";
+  const photos = await rest(`photos?select=${encodeURIComponent(select)}&hotdog_id=eq.${encodeURIComponent(dog.id)}&order=${encodeURIComponent(order)}&limit=250`);
+  return { dog, photos: photos.map(normalizeLivePhoto) };
+}
+
 export async function createPhoto({
   blob,
   dataUrl,
@@ -288,4 +313,35 @@ export async function likePhoto(photoId) {
     }
     throw error;
   }
+}
+
+export async function unlikePhoto(photoId) {
+  const alreadyLiked = getLikedPhotoIds().has(photoId);
+  if (!alreadyLiked) return { removed: false };
+
+  if (isDemoMode()) {
+    let counts = {};
+    try {
+      counts = JSON.parse(localStorage.getItem(DEMO_LIKES_KEY) || "{}");
+    } catch {
+      counts = {};
+    }
+    counts[photoId] = Math.max(0, Number(counts[photoId] || 0) - 1);
+    if (counts[photoId] === 0) delete counts[photoId];
+    localStorage.setItem(DEMO_LIKES_KEY, JSON.stringify(counts));
+    unmarkPhotoLiked(photoId);
+    return { removed: true };
+  }
+
+  const deviceHash = await sha256(getOrCreateDeviceId());
+  const result = await rest("rpc/remove_photo_like", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify({ p_photo_id: photoId, p_device_hash: deviceHash })
+  });
+  unmarkPhotoLiked(photoId);
+  return { removed: result === true };
 }

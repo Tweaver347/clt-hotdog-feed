@@ -1,4 +1,5 @@
-import { createPhoto, getHotdog, getPhotos, isDemoMode, likePhoto } from "./data.js";
+import { createPhoto, getHotdog, getPhotos, getPhotosForHotdog, isDemoMode, likePhoto, unlikePhoto } from "./data.js";
+import { getDogChallenge } from "./challenges.js";
 import { reverseGeocode, searchPlaces } from "./geocode.js";
 import { preparePhoto } from "./image.js";
 import {
@@ -6,10 +7,12 @@ import {
   escapeHtml,
   formatRelativeTime,
   getActiveDog,
+  getActiveDogDetails,
   getLikedPhotoIds,
   getRoute,
   navigate,
   setActiveDog,
+  setActiveDogDetails,
   showToast
 } from "./utils.js";
 
@@ -17,6 +20,7 @@ const app = document.getElementById("app");
 let feedSort = "newest";
 let mapInstance = null;
 let locationMapInstance = null;
+let mapDisplayMode = "map";
 let uploadState = freshUploadState();
 
 const PREFERENCES_KEY = "clt-hotdog-preferences";
@@ -231,6 +235,21 @@ function destroyMaps() {
   }
 }
 
+function inferredDogNumber(code = "") {
+  const match = String(code).match(/(\d{1,3})/);
+  return match ? Number(match[1]) : null;
+}
+
+function activeDogHeaderMarkup() {
+  const code = getActiveDog();
+  if (!code) return "";
+  const details = getActiveDogDetails();
+  const number = details?.printed_number ?? inferredDogNumber(code);
+  const visible = number != null ? `#${number}` : code.slice(0, 8);
+  const label = number != null ? `Active Hot Dog number ${number}` : `Active hot dog code ${code}`;
+  return `<span class="dog-header-badge" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">🌭</span><span>${escapeHtml(visible)}</span></span>`;
+}
+
 function shell(content, activeTab = "feed", subtitle = "Charlotte community photo feed") {
   const activeDog = getActiveDog();
   const dogQuery = activeDog ? `?dog=${encodeURIComponent(activeDog)}` : "";
@@ -242,15 +261,16 @@ function shell(content, activeTab = "feed", subtitle = "Charlotte community phot
       <div class="food-pattern food-pattern-fast" aria-hidden="true"></div>
       <header class="topbar">
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true">🌭</div>
+          <a class="brand-mark brand-home" href="#/feed${dogQuery}" aria-label="Return to the photo feed" title="Return to the photo feed">🌭</a>
           <div class="brand-copy">
             <h1 class="brand-title">${escapeHtml(config.appName || "CLT Hot Dog Feed")}</h1>
             <p class="brand-subtitle">${escapeHtml(subtitle)}</p>
           </div>
         </div>
         <div class="topbar-actions">
-          <button class="icon-button" id="theme-toggle" aria-label="Switch to ${theme === "dark" ? "light" : "dark"} mode" title="Switch to ${theme === "dark" ? "light" : "dark"} mode">${theme === "dark" ? "☀" : "☾"}</button>
-          <button class="icon-button text-icon-button" id="open-accessibility" aria-label="Open accessibility and appearance settings" aria-controls="accessibility-panel" aria-expanded="false">Aa</button>
+          ${activeDogHeaderMarkup()}
+          <button class="icon-button" id="theme-toggle" aria-label="Switch to ${theme === "dark" ? "light" : "dark"} mode" title="Switch to ${theme === "dark" ? "light" : "dark"} mode">${theme === "dark" ? "☀" : "☾"}<span class="sr-only">Theme</span></button>
+          <button class="icon-button text-icon-button" id="open-accessibility" aria-label="Open accessibility and appearance settings" aria-controls="accessibility-panel" aria-expanded="false">Aa<span class="sr-only">Accessibility</span></button>
         </div>
       </header>
       ${accessibilityPanelMarkup()}
@@ -262,7 +282,10 @@ function shell(content, activeTab = "feed", subtitle = "Charlotte community phot
         <a class="nav-item add ${activeTab === "upload" ? "active" : ""}" href="#/upload${dogQuery}" ${activeTab === "upload" ? 'aria-current="page"' : ""}>
           <span class="nav-icon" aria-hidden="true">＋</span><span>Add Photo</span>
         </a>
-        <a class="nav-item ${activeTab === "map" ? "active" : ""}" href="#/map" ${activeTab === "map" ? 'aria-current="page"' : ""}>
+        <a class="nav-item ${activeTab === "journey" ? "active" : ""}" href="#/journey${dogQuery}" ${activeTab === "journey" ? 'aria-current="page"' : ""}>
+          <span class="nav-icon" aria-hidden="true">↝</span><span>Journey</span>
+        </a>
+        <a class="nav-item ${activeTab === "map" ? "active" : ""}" href="#/map${dogQuery}" ${activeTab === "map" ? 'aria-current="page"' : ""}>
           <span class="nav-icon" aria-hidden="true">⌖</span><span>Map</span>
         </a>
       </nav>
@@ -326,6 +349,7 @@ function dogLabel(photo) {
 
 function photoCard(photo, likedIds) {
   const liked = likedIds.has(photo.id);
+  const count = Number(photo.like_count || 0);
   return `
     <article class="photo-card" id="photo-${escapeHtml(photo.id)}">
       <div class="photo-media">
@@ -339,12 +363,25 @@ function photoCard(photo, likedIds) {
             <div class="location-sub">${escapeHtml(photo.location_detail || "Charlotte")} · ${escapeHtml(dogLabel(photo))} · ${escapeHtml(formatRelativeTime(photo.created_at))}</div>
           </div>
         </div>
-        <button class="like-button ${liked ? "liked" : ""}" data-like-photo="${escapeHtml(photo.id)}" ${liked ? "disabled" : ""} aria-label="${liked ? "Photo liked" : "Like photo"}" aria-pressed="${liked ? "true" : "false"}">
+        <button class="like-button ${liked ? "liked" : ""}" data-like-photo="${escapeHtml(photo.id)}" data-liked="${liked ? "true" : "false"}" aria-label="${liked ? `Remove your like. ${count} likes` : `Like this photo. ${count} likes`}" aria-pressed="${liked ? "true" : "false"}">
           <span class="heart" aria-hidden="true">${liked ? "♥" : "♡"}</span>
-          <span data-like-count>${Number(photo.like_count || 0)}</span>
+          <span class="like-action" data-like-action>${liked ? "Liked" : "Like"}</span>
+          <span class="like-count" data-like-count>${count}</span>
         </button>
       </div>
     </article>
+  `;
+}
+
+function communityCounterMarkup(photos) {
+  const dogCount = new Set(photos.map((photo) => photo.hotdog_code).filter(Boolean)).size;
+  const placeCount = new Set(photos.map((photo) => `${photo.place_name}|${photo.location_detail || ""}`)).size;
+  return `
+    <section class="community-counter" aria-label="Community activity">
+      <div class="community-stat"><span class="community-stat-icon" aria-hidden="true">📷</span><strong>${photos.length}</strong><span>Photos</span></div>
+      <div class="community-stat"><span class="community-stat-icon" aria-hidden="true">🌭</span><strong>${dogCount}</strong><span>Dogs spotted</span></div>
+      <div class="community-stat"><span class="community-stat-icon" aria-hidden="true">📍</span><strong>${placeCount}</strong><span>Places</span></div>
+    </section>
   `;
 }
 
@@ -361,6 +398,7 @@ async function renderFeed(routeInfo) {
       getPhotos(feedSort),
       dogCode ? getHotdog(dogCode) : Promise.resolve(null)
     ]);
+    if (dog) setActiveDogDetails(dog);
     const likedIds = getLikedPhotoIds();
     const activeDogMarkup = dog
       ? `<div class="active-dog">
@@ -377,6 +415,7 @@ async function renderFeed(routeInfo) {
       <main class="page">
         ${demoNotice()}
         ${activeDogMarkup}
+        ${communityCounterMarkup(photos)}
         <section class="hero-card">
           <h1>Charlotte, one hot dog at a time.</h1>
           <p>Scan a printed dog, add one photo and a location, then watch the city-wide feed grow.</p>
@@ -385,8 +424,8 @@ async function renderFeed(routeInfo) {
         <div class="feed-toolbar">
           <h2>Photo feed</h2>
           <div class="segmented" aria-label="Sort photos">
-            <button data-sort="newest" class="${feedSort === "newest" ? "active" : ""}" aria-pressed="${feedSort === "newest" ? "true" : "false"}">Newest</button>
-            <button data-sort="top" class="${feedSort === "top" ? "active" : ""}" aria-pressed="${feedSort === "top" ? "true" : "false"}">Top</button>
+            <button data-sort="newest" class="${feedSort === "newest" ? "active" : ""}" aria-pressed="${feedSort === "newest" ? "true" : "false"}"><span aria-hidden="true">🕒</span> Newest</button>
+            <button data-sort="top" class="${feedSort === "top" ? "active" : ""}" aria-pressed="${feedSort === "top" ? "true" : "false"}"><span aria-hidden="true">♥</span> Top</button>
           </div>
         </div>
         ${feedMarkup}
@@ -428,27 +467,89 @@ async function renderFeed(routeInfo) {
   }
 }
 
+function updateLikeButton(button, liked, count) {
+  button.dataset.liked = liked ? "true" : "false";
+  button.classList.toggle("liked", liked);
+  button.setAttribute("aria-pressed", liked ? "true" : "false");
+  button.setAttribute("aria-label", `${liked ? "Remove your like" : "Like this photo"}. ${count} likes`);
+  const heart = button.querySelector(".heart");
+  const action = button.querySelector("[data-like-action]");
+  const countElement = button.querySelector("[data-like-count]");
+  if (heart) heart.textContent = liked ? "♥" : "♡";
+  if (action) action.textContent = liked ? "Liked" : "Like";
+  if (countElement) countElement.textContent = String(Math.max(0, count));
+}
+
 function attachLikeButtons() {
   document.querySelectorAll("[data-like-photo]").forEach((button) => {
     button.addEventListener("click", async () => {
       const photoId = button.dataset.likePhoto;
+      const wasLiked = button.dataset.liked === "true";
+      const countElement = button.querySelector("[data-like-count]");
+      const currentCount = Number(countElement?.textContent || 0);
       button.disabled = true;
       try {
-        const result = await likePhoto(photoId);
-        button.classList.add("liked");
-        button.setAttribute("aria-pressed", "true");
-        button.setAttribute("aria-label", "Photo liked");
-        button.querySelector(".heart").textContent = "♥";
-        if (!result.duplicate) {
-          const count = button.querySelector("[data-like-count]");
-          count.textContent = String(Number(count.textContent || 0) + 1);
+        if (wasLiked) {
+          const result = await unlikePhoto(photoId);
+          updateLikeButton(button, false, result.removed ? currentCount - 1 : currentCount);
+          showToast("Like removed.");
+        } else {
+          const result = await likePhoto(photoId);
+          updateLikeButton(button, true, result.duplicate ? currentCount : currentCount + 1);
         }
       } catch (error) {
+        showToast(error.message || `Could not ${wasLiked ? "remove" : "add"} that like.`, "error");
+      } finally {
         button.disabled = false;
-        showToast(error.message || "Could not like that photo.", "error");
       }
     });
   });
+}
+
+function groupPhotosByLocation(photos) {
+  const groups = new Map();
+  photos.forEach((photo) => {
+    const key = `${photo.place_name}|${photo.location_detail || "Charlotte"}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        placeName: photo.place_name,
+        locationDetail: photo.location_detail || "Charlotte",
+        photos: [],
+        dogs: new Set(),
+        likes: 0
+      });
+    }
+    const group = groups.get(key);
+    group.photos.push(photo);
+    if (photo.hotdog_code) group.dogs.add(photo.hotdog_code);
+    group.likes += Number(photo.like_count || 0);
+  });
+  return [...groups.values()].sort((a, b) => b.photos.length - a.photos.length || a.placeName.localeCompare(b.placeName));
+}
+
+function mapTextListMarkup(photos) {
+  const groups = groupPhotosByLocation(photos);
+  if (!groups.length) {
+    return `<div class="empty-state"><div class="empty-icon">📍</div><h2>No locations yet</h2><p>Locations will appear after the first photo is added.</p></div>`;
+  }
+  return `
+    <section class="map-text-view" aria-labelledby="map-list-title">
+      <h2 id="map-list-title">Photo locations</h2>
+      <p class="section-help">A text alternative to the interactive map, ordered by number of photos.</p>
+      <ul class="location-list">
+        ${groups.map((group) => `
+          <li class="location-list-item">
+            <div class="location-list-heading"><span aria-hidden="true">📍</span><div><strong>${escapeHtml(group.placeName)}</strong><span>${escapeHtml(group.locationDetail)}</span></div></div>
+            <dl class="location-list-stats">
+              <div><dt>Photos</dt><dd>${group.photos.length}</dd></div>
+              <div><dt>Dogs</dt><dd>${group.dogs.size}</dd></div>
+              <div><dt>Likes</dt><dd>${group.likes}</dd></div>
+            </dl>
+          </li>
+        `).join("")}
+      </ul>
+    </section>
+  `;
 }
 
 async function renderMapPage() {
@@ -458,18 +559,31 @@ async function renderMapPage() {
 
   try {
     const photos = await getPhotos("newest");
+    const viewMarkup = mapDisplayMode === "map"
+      ? `<div class="map-shell"><div class="map-overlay"><div class="map-pill"><span aria-hidden="true">📷</span> ${photos.length} photo${photos.length === 1 ? "" : "s"}</div><div class="map-pill"><span aria-hidden="true">📍</span> Charlotte, NC</div></div><div id="photo-map" aria-label="Map showing submitted community photos"></div></div>`
+      : mapTextListMarkup(photos);
     const content = `
       <main class="page-wide">
         ${demoNotice()}
-        <div class="map-shell">
-          <div class="map-overlay"><div class="map-pill">📷 ${photos.length} photo${photos.length === 1 ? "" : "s"}</div><div class="map-pill">Charlotte, NC</div></div>
-          <div id="photo-map" aria-label="Map showing submitted community photos"></div>
+        <div class="view-toolbar">
+          <div><h1>Community photo map</h1><p>Explore the event visually or switch to the accessible text list.</p></div>
+          <div class="segmented" aria-label="Map display">
+            <button data-map-view="map" class="${mapDisplayMode === "map" ? "active" : ""}" aria-pressed="${mapDisplayMode === "map" ? "true" : "false"}"><span aria-hidden="true">🗺️</span> Map</button>
+            <button data-map-view="text" class="${mapDisplayMode === "text" ? "active" : ""}" aria-pressed="${mapDisplayMode === "text" ? "true" : "false"}"><span aria-hidden="true">☷</span> Text</button>
+          </div>
         </div>
+        ${viewMarkup}
       </main>
     `;
     app.innerHTML = shell(content, "map", "All community photos across Charlotte");
     attachShellEvents();
-    initializePhotoMap(photos);
+    document.querySelectorAll("[data-map-view]").forEach((button) => {
+      button.addEventListener("click", () => {
+        mapDisplayMode = button.dataset.mapView;
+        renderMapPage();
+      });
+    });
+    if (mapDisplayMode === "map") initializePhotoMap(photos);
   } catch (error) {
     app.innerHTML = shell(`<main class="page"><div class="empty-state"><div class="empty-icon">🗺️</div><h2>Could not load the map</h2><p>${escapeHtml(error.message)}</p></div></main>`, "map");
     attachShellEvents();
@@ -522,32 +636,41 @@ function uploadMarkup() {
   const dogText = dog
     ? dog.printed_number != null ? `Hot Dog #${dog.printed_number}` : dog.public_code
     : uploadState.dogCode ? uploadState.dogCode : "Community upload";
+  const challenge = getDogChallenge(dog, uploadState.dogCode);
 
   return `
     <main class="page">
       ${demoNotice()}
-      ${testWarning()}
       <div class="active-dog">
-        <div><strong>🌭 ${escapeHtml(dogText)}</strong><span>${dog ? `Code ${escapeHtml(dog.public_code)}` : "The photo will not be tied to a known printed dog."}</span></div>
+        <div><strong><span aria-hidden="true">🌭</span> ${escapeHtml(dogText)}</strong><span>${dog ? `Code ${escapeHtml(dog.public_code)}` : "The photo will not be tied to a known printed dog."}</span></div>
+        <a class="small-button inline-link-button" href="#/feed${uploadState.dogCode ? `?dog=${encodeURIComponent(uploadState.dogCode)}` : ""}"><span aria-hidden="true">←</span> Feed</a>
       </div>
 
+      <section class="challenge-card" aria-labelledby="photo-challenge-title">
+        <div class="challenge-kicker"><span aria-hidden="true">🎯</span> Hot Dog #${challenge.challengeNumber} photo challenge</div>
+        <h1 id="photo-challenge-title">${escapeHtml(challenge.prompt)}</h1>
+        <p>This is optional. Any respectful photo is welcome, and you never need to photograph a person to participate.</p>
+      </section>
+
+      ${testWarning()}
+
       <section class="panel">
-        <h2 class="section-heading">1. Choose the location</h2>
+        <h2 class="section-heading"><span aria-hidden="true">1️⃣</span> Choose the location</h2>
         <p class="section-help">Use your current position or search for a Charlotte business, landmark, or address.</p>
         <div class="location-actions">
-          <button class="primary-button" id="use-location" ${uploadState.locating ? "disabled" : ""}>${uploadState.locating ? "Finding location…" : "⌖ Use current location"}</button>
-          <button class="secondary-button" id="focus-search">⌕ Search for a place</button>
+          <button class="primary-button" id="use-location" ${uploadState.locating ? "disabled" : ""}><span aria-hidden="true">⌖</span> ${uploadState.locating ? "Finding location…" : "Use current location"}</button>
+          <button class="secondary-button" id="focus-search"><span aria-hidden="true">⌕</span> Search for a place</button>
         </div>
         <div class="field" style="margin-top:14px">
           <label for="place-search">Location search</label>
           <div class="search-row">
             <input class="search-input" id="place-search" value="${escapeHtml(uploadState.searchQuery)}" placeholder="Moo & Brew or Plaza Midwood" autocomplete="off" />
-            <button class="small-button" id="search-place" ${uploadState.searching ? "disabled" : ""}>${uploadState.searching ? "Searching…" : "Search"}</button>
+            <button class="small-button" id="search-place" ${uploadState.searching ? "disabled" : ""}><span aria-hidden="true">⌕</span> ${uploadState.searching ? "Searching…" : "Search"}</button>
           </div>
           <span class="section-help" style="margin:0">Search runs only when you press Search. ${escapeHtml(config.geocoderAttribution || "Search data © OpenStreetMap contributors")}.</span>
         </div>
         ${uploadState.searchResults.length ? `<div class="search-results">${uploadState.searchResults.map((result, index) => `
-          <button class="search-result" data-search-result="${index}"><strong>${escapeHtml(result.placeName)}</strong><span>${escapeHtml(result.displayName)}</span></button>
+          <button class="search-result" data-search-result="${index}"><strong><span aria-hidden="true">📍</span> ${escapeHtml(result.placeName)}</strong><span>${escapeHtml(result.displayName)}</span></button>
         `).join("")}</div>` : ""}
         ${location ? `
           <div class="location-summary" style="margin-top:14px">
@@ -559,12 +682,12 @@ function uploadMarkup() {
       </section>
 
       <section class="panel">
-        <h2 class="section-heading">2. Add one photo</h2>
+        <h2 class="section-heading"><span aria-hidden="true">2️⃣</span> Add one photo</h2>
         <p class="section-help">The browser resizes and re-encodes the image before upload, which removes embedded photo metadata.</p>
         ${photo ? `
           <div class="photo-preview">
             <img src="${escapeHtml(photo.dataUrl)}" alt="Selected photo preview" />
-            <button class="small-button" id="remove-photo">Change photo</button>
+            <button class="small-button" id="remove-photo"><span aria-hidden="true">↻</span> Change photo</button>
           </div>
         ` : `
           <div class="photo-source-grid">
@@ -586,12 +709,12 @@ function uploadMarkup() {
       </section>
 
       <section class="panel">
-        <h2 class="section-heading">3. Publish to the test feed</h2>
+        <h2 class="section-heading"><span aria-hidden="true">3️⃣</span> Publish to the test feed</h2>
         <label class="checkbox-row">
           <input id="photo-consent" type="checkbox" ${uploadState.consent ? "checked" : ""} />
           <span>I have permission to post this photo, including permission from anyone clearly pictured.</span>
         </label>
-        <button class="primary-button" id="submit-photo" style="margin-top:16px" ${uploadState.submitting ? "disabled" : ""}>${uploadState.submitting ? "Publishing…" : "Publish photo"}</button>
+        <button class="primary-button" id="submit-photo" style="margin-top:16px" ${uploadState.submitting ? "disabled" : ""}><span aria-hidden="true">⬆</span> ${uploadState.submitting ? "Publishing…" : "Publish photo"}</button>
       </section>
     </main>
   `;
@@ -606,6 +729,7 @@ async function renderUpload(routeInfo, reset = false) {
   if (!uploadState.dog && dogCode) {
     try {
       uploadState.dog = await getHotdog(dogCode);
+      if (uploadState.dog) setActiveDogDetails(uploadState.dog);
     } catch (error) {
       showToast(error.message, "error");
     }
@@ -769,8 +893,61 @@ async function submitPhoto() {
   }
 }
 
+async function renderJourneyPage(routeInfo) {
+  destroyMaps();
+  const dogCode = (routeInfo.params.get("dog") || getActiveDog() || "").toUpperCase();
+  if (dogCode) setActiveDog(dogCode);
+  app.innerHTML = shell(`<main class="page">${loadingMarkup("Loading this dog's journey…")}</main>`, "journey", "Photos from one traveling hot dog");
+  attachShellEvents();
+
+  if (!dogCode) {
+    app.innerHTML = shell(`<main class="page"><div class="empty-state"><div class="empty-icon">🌭</div><h2>No hot dog selected</h2><p>Scan a numbered hot dog QR code to see its journey.</p><a class="primary-button" href="#/feed"><span aria-hidden="true">▦</span> Return to feed</a></div></main>`, "journey");
+    attachShellEvents();
+    return;
+  }
+
+  try {
+    const { dog, photos } = await getPhotosForHotdog(dogCode, "oldest");
+    if (dog) setActiveDogDetails(dog);
+    const likedIds = getLikedPhotoIds();
+    const challenge = getDogChallenge(dog, dogCode);
+    const placeCount = new Set(photos.map((photo) => `${photo.place_name}|${photo.location_detail || ""}`)).size;
+    const totalLikes = photos.reduce((total, photo) => total + Number(photo.like_count || 0), 0);
+    const dogName = dog?.printed_number != null ? `Hot Dog #${dog.printed_number}` : dog?.public_code || dogCode;
+    const journeyPhotos = photos.length
+      ? `<div class="journey-timeline">${photos.map((photo, index) => `<div class="journey-stop"><div class="journey-marker" aria-hidden="true">${index + 1}</div>${photoCard(photo, likedIds)}</div>`).join("")}</div>`
+      : `<div class="empty-state"><div class="empty-icon">🧭</div><h2>No journey photos yet</h2><p>Be the first person to add a stop for ${escapeHtml(dogName)}.</p><a class="primary-button" href="#/upload?dog=${encodeURIComponent(dogCode)}"><span aria-hidden="true">📷</span> Add the first photo</a></div>`;
+
+    const content = `
+      <main class="page">
+        ${demoNotice()}
+        <section class="journey-hero">
+          <div><p class="journey-eyebrow"><span aria-hidden="true">↝</span> This Dog's Journey</p><h1>${escapeHtml(dogName)}</h1><p>Every stop connected to code ${escapeHtml(dog?.public_code || dogCode)} appears here.</p></div>
+          <a class="small-button inline-link-button" href="#/upload?dog=${encodeURIComponent(dogCode)}"><span aria-hidden="true">📷</span> Add stop</a>
+        </section>
+        <section class="journey-stats" aria-label="Journey summary">
+          <div><strong>${photos.length}</strong><span>Photos</span></div>
+          <div><strong>${placeCount}</strong><span>Places</span></div>
+          <div><strong>${totalLikes}</strong><span>Likes</span></div>
+        </section>
+        <section class="challenge-mini"><span aria-hidden="true">🎯</span><div><strong>Photo challenge #${challenge.challengeNumber}</strong><p>${escapeHtml(challenge.prompt)}</p></div></section>
+        ${journeyPhotos}
+      </main>
+    `;
+    app.innerHTML = shell(content, "journey", `${dogName}'s community journey`);
+    attachShellEvents();
+    attachLikeButtons();
+  } catch (error) {
+    app.innerHTML = shell(`<main class="page"><div class="empty-state"><div class="empty-icon">⚠️</div><h2>Could not load this journey</h2><p>${escapeHtml(error.message)}</p><button class="primary-button" id="retry-journey"><span aria-hidden="true">↻</span> Try again</button></div></main>`, "journey");
+    attachShellEvents();
+    document.getElementById("retry-journey")?.addEventListener("click", () => renderJourneyPage(routeInfo));
+  }
+}
+
 async function route(force = false) {
   const routeInfo = getRoute();
+  const routeDogCode = (routeInfo.params.get("dog") || "").toUpperCase();
+  if (routeDogCode) setActiveDog(routeDogCode);
   if (routeInfo.segments[0] === "dog" && routeInfo.segments[1]) {
     const code = routeInfo.segments[1].toUpperCase();
     setActiveDog(code);
@@ -780,6 +957,10 @@ async function route(force = false) {
 
   if (routeInfo.path === "/map") {
     await renderMapPage();
+    return;
+  }
+  if (routeInfo.path === "/journey") {
+    await renderJourneyPage(routeInfo);
     return;
   }
   if (routeInfo.path === "/upload") {
