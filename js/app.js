@@ -1,5 +1,6 @@
 import { createPhoto, getHotdog, getPhotos, getPhotosForHotdog, isDemoMode, likePhoto, unlikePhoto } from "./data.js";
 import { getDogChallenge } from "./challenges.js";
+import { EVENT_GUIDE_PAGES, EVENT_NEIGHBORHOODS } from "./event-data.js";
 import { reverseGeocode, searchPlaces } from "./geocode.js";
 import { preparePhoto } from "./image.js";
 import {
@@ -21,6 +22,7 @@ let feedSort = "newest";
 let mapInstance = null;
 let locationMapInstance = null;
 let mapDisplayMode = "map";
+let eventGuideIndex = 0;
 let uploadState = freshUploadState();
 
 const PREFERENCES_KEY = "clt-hotdog-preferences";
@@ -276,6 +278,9 @@ function shell(content, activeTab = "feed", subtitle = "Charlotte community phot
       ${accessibilityPanelMarkup()}
       <div id="main-content" class="route-content" tabindex="-1">${content}</div>
       <nav class="bottom-nav" aria-label="Primary navigation">
+        <a class="nav-item ${activeTab === "event" ? "active" : ""}" href="#/event${dogQuery}" ${activeTab === "event" ? 'aria-current="page"' : ""}>
+          <span class="nav-icon" aria-hidden="true">ⓘ</span><span>Event</span>
+        </a>
         <a class="nav-item ${activeTab === "feed" ? "active" : ""}" href="#/feed${dogQuery}" ${activeTab === "feed" ? 'aria-current="page"' : ""}>
           <span class="nav-icon" aria-hidden="true">▦</span><span>Feed</span>
         </a>
@@ -944,6 +949,176 @@ async function renderJourneyPage(routeInfo) {
   }
 }
 
+
+function neighborhoodMarkup() {
+  return EVENT_NEIGHBORHOODS.map((area) => `
+    <details class="event-neighborhood">
+      <summary>
+        <span><strong>${escapeHtml(area.name)}</strong><small>${escapeHtml(area.range)} · Suggested start: ${escapeHtml(area.suggestedStart)}</small></span>
+        <span class="details-chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <ul class="event-venue-list">
+        ${area.venues.map((venue) => `<li><span aria-hidden="true">🌭</span><span>${escapeHtml(venue)}</span></li>`).join("")}
+      </ul>
+    </details>
+  `).join("");
+}
+
+function guideViewerMarkup() {
+  const page = EVENT_GUIDE_PAGES[eventGuideIndex] || EVENT_GUIDE_PAGES[0];
+  return `
+    <section class="event-section" id="official-guide" aria-labelledby="official-guide-title">
+      <div class="event-section-heading">
+        <div>
+          <p class="event-eyebrow"><span aria-hidden="true">📖</span> Official visual guide</p>
+          <h2 id="official-guide-title">Browse one page at a time</h2>
+          <p>The text sections above cover the essentials. These guide pages include the full specials, maps, passport rewards, and event artwork.</p>
+        </div>
+      </div>
+      <div class="guide-controls">
+        <label for="event-guide-select">Guide page</label>
+        <select class="text-input" id="event-guide-select">
+          ${EVENT_GUIDE_PAGES.map((item, index) => `<option value="${index}" ${index === eventGuideIndex ? "selected" : ""}>${index + 1}. ${escapeHtml(item.title)}</option>`).join("")}
+        </select>
+      </div>
+      <figure class="event-guide-viewer">
+        <a id="event-guide-link" href="${escapeHtml(page.src)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(page.title)} as a full-size image in a new tab">
+          <img id="event-guide-image" src="${escapeHtml(page.src)}" alt="${escapeHtml(page.alt)}" decoding="async" />
+        </a>
+        <figcaption>
+          <strong id="event-guide-title">${escapeHtml(page.title)}</strong>
+          <span id="event-guide-count">Page ${eventGuideIndex + 1} of ${EVENT_GUIDE_PAGES.length}</span>
+        </figcaption>
+      </figure>
+      <div class="guide-pagination" aria-label="Official guide page controls">
+        <button class="secondary-button" id="previous-guide-page" ${eventGuideIndex === 0 ? "disabled" : ""}><span aria-hidden="true">←</span> Previous</button>
+        <button class="secondary-button" id="next-guide-page" ${eventGuideIndex === EVENT_GUIDE_PAGES.length - 1 ? "disabled" : ""}>Next <span aria-hidden="true">→</span></button>
+      </div>
+    </section>
+  `;
+}
+
+function updateEventGuide(index) {
+  const clamped = Math.max(0, Math.min(EVENT_GUIDE_PAGES.length - 1, Number(index) || 0));
+  eventGuideIndex = clamped;
+  const page = EVENT_GUIDE_PAGES[eventGuideIndex];
+  const image = document.getElementById("event-guide-image");
+  const link = document.getElementById("event-guide-link");
+  const title = document.getElementById("event-guide-title");
+  const count = document.getElementById("event-guide-count");
+  const select = document.getElementById("event-guide-select");
+  const previous = document.getElementById("previous-guide-page");
+  const next = document.getElementById("next-guide-page");
+  if (image) {
+    image.src = page.src;
+    image.alt = page.alt;
+  }
+  if (link) {
+    link.href = page.src;
+    link.setAttribute("aria-label", `Open ${page.title} as a full-size image in a new tab`);
+  }
+  if (title) title.textContent = page.title;
+  if (count) count.textContent = `Page ${eventGuideIndex + 1} of ${EVENT_GUIDE_PAGES.length}`;
+  if (select) select.value = String(eventGuideIndex);
+  if (previous) previous.disabled = eventGuideIndex === 0;
+  if (next) next.disabled = eventGuideIndex === EVENT_GUIDE_PAGES.length - 1;
+  document.querySelector(".event-guide-viewer")?.scrollIntoView({ behavior: preferences.reduceMotion ? "auto" : "smooth", block: "nearest" });
+}
+
+function attachEventEvents() {
+  document.querySelectorAll("[data-event-section]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.getElementById(button.dataset.eventSection)?.scrollIntoView({ behavior: preferences.reduceMotion ? "auto" : "smooth", block: "start" });
+    });
+  });
+  document.getElementById("event-guide-select")?.addEventListener("change", (event) => updateEventGuide(event.target.value));
+  document.getElementById("previous-guide-page")?.addEventListener("click", () => updateEventGuide(eventGuideIndex - 1));
+  document.getElementById("next-guide-page")?.addEventListener("click", () => updateEventGuide(eventGuideIndex + 1));
+}
+
+function renderEventPage() {
+  destroyMaps();
+  const activeDog = getActiveDog();
+  const dogQuery = activeDog ? `?dog=${encodeURIComponent(activeDog)}` : "";
+  const content = `
+    <main class="page event-page">
+      <section class="event-hero" aria-labelledby="event-page-title">
+        <p class="event-eyebrow"><span aria-hidden="true">🌭</span> Your guide to the crawl</p>
+        <h1 id="event-page-title">The Hot Dog Bar Crawl</h1>
+        <p class="event-date"><span aria-hidden="true">📅</span> Saturday, August 1, 2026</p>
+        <p>Plaza Midwood and beyond, with participating stops in Uptown, NoDa, South End, and LoSo. This page is a quick, accessible summary of the event guide.</p>
+        <div class="event-hero-actions">
+          <a class="primary-button" href="#/feed${dogQuery}"><span aria-hidden="true">▦</span> Open the photo feed</a>
+          <button class="secondary-button" type="button" data-event-section="official-guide"><span aria-hidden="true">📖</span> View the full guide</button>
+        </div>
+      </section>
+
+      <section class="event-at-a-glance" aria-label="Event at a glance">
+        <div><span aria-hidden="true">📍</span><strong>5</strong><span>Neighborhoods</span></div>
+        <div><span aria-hidden="true">🌭</span><strong>30</strong><span>Mapped stops</span></div>
+        <div><span aria-hidden="true">✅</span><strong>6</strong><span>Stamps for rewards</span></div>
+      </section>
+
+      <nav class="event-jump-links" aria-label="Event page sections">
+        <button type="button" data-event-section="passport"><span aria-hidden="true">🛂</span> Passport</button>
+        <button type="button" data-event-section="neighborhoods"><span aria-hidden="true">🗺️</span> Neighborhoods</button>
+        <button type="button" data-event-section="travel"><span aria-hidden="true">🚌</span> Travel safely</button>
+        <button type="button" data-event-section="extras"><span aria-hidden="true">🎉</span> Extras</button>
+      </nav>
+
+      <section class="event-section" id="passport" aria-labelledby="passport-title">
+        <p class="event-eyebrow"><span aria-hidden="true">🛂</span> The passport</p>
+        <h2 id="passport-title">Collect stamps and unlock rewards</h2>
+        <ol class="event-step-list">
+          <li><span aria-hidden="true">1</span><div><strong>Pick up a passport</strong><p>Most passports will be available on event day at the recommended starting locations, with some available at other participating businesses.</p></div></li>
+          <li><span aria-hidden="true">2</span><div><strong>Buy an eligible item</strong><p>Ask the participating business for a stamp or sticker after an eligible purchase.</p></div></li>
+          <li><span aria-hidden="true">3</span><div><strong>Reach six stamps</strong><p>Six stamps unlock the ability to redeem any and all listed rewards, not just one.</p></div></li>
+          <li><span aria-hidden="true">4</span><div><strong>Keep the passport</strong><p>Rewards have their own redemption windows. You do not need a stamp from the business whose reward you redeem.</p></div></li>
+        </ol>
+      </section>
+
+      <section class="event-section" id="neighborhoods" aria-labelledby="neighborhoods-title">
+        <p class="event-eyebrow"><span aria-hidden="true">🗺️</span> Where to go</p>
+        <h2 id="neighborhoods-title">Choose your own route</h2>
+        <p>The map numbers identify stops; they are not a required crawl order. Expand a neighborhood to see its venue list.</p>
+        <div class="event-neighborhood-list">${neighborhoodMarkup()}</div>
+      </section>
+
+      <section class="event-section event-safety" id="travel" aria-labelledby="travel-title">
+        <p class="event-eyebrow"><span aria-hidden="true">🚌</span> Crawl responsibly</p>
+        <h2 id="travel-title">Plan transportation before the first stop</h2>
+        <div class="event-info-grid">
+          <div><span aria-hidden="true">🚐</span><strong>JUMP Transit</strong><p>$3 one way per person or a $7 day pass per person for select neighborhoods.</p></div>
+          <div><span aria-hidden="true">🚈</span><strong>Rail and rideshare</strong><p>Use the Blue Line, Gold Line, or a rideshare service to move between other neighborhoods.</p></div>
+          <div><span aria-hidden="true">🚫</span><strong>Do not drink and drive</strong><p>No amount of hot dogs makes driving after drinking safe. Arrange a sober ride.</p></div>
+        </div>
+      </section>
+
+      <section class="event-section" id="extras" aria-labelledby="extras-title">
+        <p class="event-eyebrow"><span aria-hidden="true">🎉</span> More event fun</p>
+        <h2 id="extras-title">Activities, challenges, and merch</h2>
+        <ul class="event-feature-list">
+          <li><span aria-hidden="true">🏆</span><div><strong>Hot dog eating contest</strong><p>Scheduled for 7 PM at Common Market, with an “eat a hot dog in style” competition around 7:30 PM.</p></div></li>
+          <li><span aria-hidden="true">🎨</span><div><strong>Hot dog tattoos</strong><p>Charlotte Tattoo Company is offering several hot dog flash designs.</p></div></li>
+          <li><span aria-hidden="true">🏛️</span><div><strong>Mint Museum admission</strong><p>Hot dog-themed outfits receive free general admission at the Mint Museum in Uptown.</p></div></li>
+          <li><span aria-hidden="true">📣</span><div><strong>Share the day</strong><p>The official guide suggests using <strong>#HDBC2026</strong> and <strong>#GLEEZYGOODTIME</strong>.</p></div></li>
+          <li><span aria-hidden="true">🎁</span><div><strong>Merch</strong><p>Free magnets, stickers, and koozies are available at select locations; limited shirts are available for purchase at Common Market.</p></div></li>
+        </ul>
+      </section>
+
+      <aside class="event-note" aria-label="Event information note">
+        <span aria-hidden="true">ℹ️</span>
+        <p>This community photo website is separate from the organizer's official guide. Specials, hours, availability, and entry rules may change. Check the venue and official event posts on the day of the crawl.</p>
+      </aside>
+
+      ${guideViewerMarkup()}
+    </main>
+  `;
+  app.innerHTML = shell(content, "event", "Hot Dog Bar Crawl event details");
+  attachShellEvents();
+  attachEventEvents();
+}
+
 async function route(force = false) {
   const routeInfo = getRoute();
   const routeDogCode = (routeInfo.params.get("dog") || "").toUpperCase();
@@ -955,6 +1130,10 @@ async function route(force = false) {
     return;
   }
 
+  if (routeInfo.path === "/event") {
+    renderEventPage();
+    return;
+  }
   if (routeInfo.path === "/map") {
     await renderMapPage();
     return;
