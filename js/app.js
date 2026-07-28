@@ -681,8 +681,27 @@ async function renderFeed(routeInfo) {
     currentPhotoRecords = new Map(photos.map((photo) => [photo.id, photo]));
     const activeDogMarkup = dog
       ? `<div class="active-dog">
-          <div><strong>🌭 ${dog.printed_number != null ? `Hot Dog #${dog.printed_number}` : dog.public_code} is active</strong><span>Photos you add from this link will be connected to ${escapeHtml(dog.public_code)}.</span></div>
-          <button class="small-button" data-add-photo>Add photo</button>
+          <div>
+            <strong>
+              🌭 ${
+                dog.printed_number != null
+                  ? `Hot Dog #${dog.printed_number}`
+                  : "This hot dog"
+              } is active
+            </strong>
+
+            <span>
+              ${
+                dog.printed_number != null
+                  ? `Photos from this link will join Hot Dog #${dog.printed_number}'s journey.`
+                  : "Photos from this link will join this hot dog's journey."
+              }
+            </span>
+          </div>
+
+          <button class="small-button" data-add-photo>
+            Add photo
+          </button>
         </div>`
       : "";
 
@@ -1634,7 +1653,37 @@ function renderEventPage() {
   attachShellEvents();
   attachEventEvents();
 }
+/**
+ * Converts a permanent engraved link such as:
+ *   /h/QUEEN07
+ *
+ * into the app's existing internal route:
+ *   /#/feed?dog=QUEEN07
+ *
+ * The short physical URL can remain permanent even if the app's internal
+ * navigation changes later.
+ */
+function convertShortDogPathToAppRoute() {
+  const match = window.location.pathname.match(
+    /^\/h\/([A-Za-z0-9]{4,32})\/?$/
+  );
 
+  if (!match) {
+    return false;
+  }
+
+  const code = match[1].toUpperCase();
+
+  setActiveDog(code);
+
+  window.history.replaceState(
+    null,
+    "",
+    `/#/feed?dog=${encodeURIComponent(code)}`
+  );
+
+  return true;
+}
 async function route(force = false) {
   window.scrollTo(0, 0);
   const routeInfo = getRoute();
@@ -1685,6 +1734,15 @@ systemDarkQuery.addEventListener?.("change", () => {
 window.addEventListener("DOMContentLoaded", () => {
   applyPreferences();
   updateParallax();
-  if (!window.location.hash) window.location.hash = "#/feed";
-  else route();
+
+  if (convertShortDogPathToAppRoute()) {
+    route();
+    return;
+  }
+
+  if (!window.location.hash) {
+    window.location.hash = "#/feed";
+  } else {
+    route();
+  }
 });
