@@ -2063,3 +2063,212 @@ html[data-theme="dark"] .milestone-card.unlocked { background: #342817; }
   .location-main > span:last-child { max-width: 190px; }
   .action-dialog-actions { grid-template-columns: 1fr; }
 }
+
+
+/* Mobile map polish: Charlotte framing, compact controls, and a nav-safe detail card */
+.modern-map-shell .leaflet-control-container { font-family: inherit; }
+html[data-theme="dark"] .modern-map-shell .leaflet-tile-pane {
+  filter: invert(.9) hue-rotate(165deg) saturate(.62) brightness(.8) contrast(.94);
+}
+.neighborhood-filters {
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.map-photo-sheet { max-height: calc(100% - 24px); overflow: auto; }
+
+@media (max-width: 679px) {
+  .map-page {
+    padding-top: 14px;
+    scroll-margin-top: calc(64px + env(safe-area-inset-top));
+  }
+  .modern-map-toolbar {
+    gap: 8px;
+    padding: 2px 4px 0;
+  }
+  .modern-map-toolbar > div:first-child {
+    min-width: 0;
+  }
+  .modern-map-toolbar h1 {
+    font-size: calc(25px * var(--text-scale));
+    line-height: 1.05;
+  }
+  .modern-map-toolbar p:not(.map-eyebrow) {
+    max-width: 34rem;
+    margin-top: 4px;
+    line-height: 1.35;
+  }
+  .modern-map-toolbar .segmented {
+    min-height: 46px;
+    padding: 4px;
+    border-radius: 18px;
+  }
+  .modern-map-toolbar .segmented button {
+    min-height: 38px;
+    border-radius: 14px;
+  }
+  .neighborhood-filter-wrap {
+    margin-inline: -8px;
+  }
+  .neighborhood-filter-wrap::before,
+  .neighborhood-filter-wrap::after {
+    content: "";
+    position: absolute;
+    z-index: 3;
+    top: 0;
+    bottom: 5px;
+    width: 22px;
+    pointer-events: none;
+  }
+  .neighborhood-filter-wrap::before {
+    left: 0;
+    background: linear-gradient(90deg, var(--bg), transparent);
+  }
+  .neighborhood-filter-wrap::after {
+    right: 0;
+    background: linear-gradient(270deg, var(--bg), transparent);
+  }
+  .neighborhood-filters {
+    padding: 2px 28px 7px;
+    scroll-padding-inline: 28px;
+  }
+  .neighborhood-chip {
+    min-height: 42px;
+    padding-inline: 12px;
+  }
+  .modern-map-shell {
+    height: min(61svh, 620px);
+    min-height: 455px;
+    border-radius: 24px;
+  }
+  .modern-map-shell .leaflet-control-zoom {
+    margin-top: 10px;
+    margin-right: 10px;
+  }
+  .modern-map-shell .leaflet-control-zoom a {
+    width: 40px;
+    height: 40px;
+    line-height: 38px;
+  }
+  .modern-map-shell .leaflet-control-attribution {
+    max-width: 58%;
+    font-size: 8px;
+    opacity: .82;
+  }
+  .map-status-pill {
+    top: 10px;
+    left: 10px;
+    min-height: 38px;
+    padding: 7px 10px;
+  }
+  .map-floating-actions {
+    right: 10px;
+    bottom: 12px;
+    gap: 7px;
+  }
+  .map-control-button {
+    width: 44px;
+    min-height: 44px;
+    border-radius: 15px;
+  }
+  .map-photo-sheet {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    max-height: 190px;
+    padding: 10px;
+    overflow: visible;
+    border-radius: 21px;
+  }
+  .map-sheet-handle {
+    width: 38px;
+    height: 4px;
+    margin: -1px auto 8px;
+  }
+  .map-sheet-close {
+    top: 9px;
+    right: 9px;
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+  }
+  .map-sheet-content {
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+  }
+  .map-sheet-main-image {
+    width: 78px;
+    height: 86px;
+    border-radius: 14px;
+  }
+  .map-sheet-copy {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 8px;
+    align-items: center;
+    padding-right: 32px;
+  }
+  .map-sheet-neighborhood,
+  .map-sheet-copy h2,
+  .map-sheet-copy > p:not(.map-sheet-neighborhood) {
+    grid-column: 1 / -1;
+  }
+  .map-sheet-neighborhood {
+    margin-bottom: 1px !important;
+    font-size: calc(9px * var(--text-scale));
+  }
+  .map-sheet-copy h2 {
+    overflow: hidden;
+    font-size: calc(15px * var(--text-scale));
+    line-height: 1.12;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .map-sheet-copy > p:not(.map-sheet-neighborhood) {
+    display: -webkit-box;
+    margin: 3px 0 7px;
+    overflow: hidden;
+    font-size: calc(9px * var(--text-scale));
+    line-height: 1.3;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .map-sheet-feed-button {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 38px;
+    padding: 7px 10px;
+    border-radius: 13px;
+    font-size: calc(12px * var(--text-scale));
+  }
+  .modern-map-marker {
+    width: 50px;
+    height: 50px;
+    border-radius: 17px 17px 17px 6px;
+  }
+  .modern-map-marker-count {
+    top: -9px;
+    right: -8px;
+    min-width: 23px;
+    height: 23px;
+  }
+}
+
+@media (max-width: 390px) {
+  .modern-map-shell {
+    height: min(59svh, 560px);
+    min-height: 420px;
+  }
+  .map-photo-sheet {
+    bottom: calc(70px + env(safe-area-inset-bottom));
+    max-height: 178px;
+  }
+  .map-sheet-content {
+    grid-template-columns: 70px minmax(0, 1fr);
+  }
+  .map-sheet-main-image {
+    width: 70px;
+    height: 78px;
+  }
+}

@@ -88,6 +88,17 @@ let photoMenuOutsideBound = false;
 const SUCCESS_PHOTO_KEY = "clt-hotdog-last-success-photo";
 
 const MAP_NEIGHBORHOODS = ["All", "Plaza Midwood", "NoDa", "Uptown", "South End", "LoSo", "Other Charlotte"];
+const CHARLOTTE_MAP_CENTER = [35.2271, -80.8431];
+const CHARLOTTE_MAP_BOUNDS = [[34.86, -81.24], [35.64, -80.34]];
+
+function isCharlotteMapCoordinate(latitude, longitude) {
+  return Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= CHARLOTTE_MAP_BOUNDS[0][0]
+    && latitude <= CHARLOTTE_MAP_BOUNDS[1][0]
+    && longitude >= CHARLOTTE_MAP_BOUNDS[0][1]
+    && longitude <= CHARLOTTE_MAP_BOUNDS[1][1];
+}
 
 const PREFERENCES_KEY = "clt-hotdog-preferences";
 const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -907,8 +918,8 @@ function mapCanvasMarkup(photos) {
         <div id="photo-map" aria-label="Interactive map showing submitted community photos"></div>
         <div class="map-status-pill"><span aria-hidden="true">📷</span><strong>${photos.length}</strong><span>photo${photos.length === 1 ? "" : "s"}</span></div>
         <div class="map-floating-actions" aria-label="Map controls">
-          <button class="map-control-button" id="map-near-me"><span aria-hidden="true">⌖</span><span>Near me</span></button>
-          <button class="map-control-button" id="map-show-all"><span aria-hidden="true">⊙</span><span>Show all</span></button>
+          <button class="map-control-button" id="map-near-me" title="Center the map near your current location"><span aria-hidden="true">⌖</span><span>Near me</span></button>
+          <button class="map-control-button" id="map-show-all" title="Show all Charlotte photo locations"><span aria-hidden="true">◎</span><span>Charlotte</span></button>
         </div>
         <aside class="map-photo-sheet" id="map-photo-sheet" aria-live="polite" hidden></aside>
       </div>
@@ -971,9 +982,15 @@ async function renderMapPage() {
   }
 }
 
-function initializeBaseMap(elementId, center, zoom) {
+function initializeBaseMap(elementId, center, zoom, options = {}) {
   if (!window.L) throw new Error("The map library did not load. Check your internet connection.");
-  const map = window.L.map(elementId, { zoomControl: false, attributionControl: true }).setView(center, zoom);
+  const mapOptions = { zoomControl: false, attributionControl: true };
+  if (options.constrainToCharlotte) {
+    mapOptions.minZoom = 9;
+    mapOptions.maxBounds = CHARLOTTE_MAP_BOUNDS;
+    mapOptions.maxBoundsViscosity = 0.82;
+  }
+  const map = window.L.map(elementId, mapOptions).setView(center, zoom);
   window.L.control.zoom({ position: "topright" }).addTo(map);
   window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
@@ -983,8 +1000,10 @@ function initializeBaseMap(elementId, center, zoom) {
 }
 
 function initializePhotoMap(photos) {
-  mapInstance = initializeBaseMap("photo-map", config.mapCenter || [35.2271, -80.8431], config.mapZoom || 11);
-  const groups = groupPhotosByLocation(photos).filter((group) => Number.isFinite(group.latitude) && Number.isFinite(group.longitude));
+  const configuredCenter = Array.isArray(config.mapCenter) && config.mapCenter.length === 2 ? config.mapCenter : CHARLOTTE_MAP_CENTER;
+  mapInstance = initializeBaseMap("photo-map", configuredCenter, Math.max(11, Number(config.mapZoom) || 11), { constrainToCharlotte: true });
+  const allGroups = groupPhotosByLocation(photos);
+  const groups = allGroups.filter((group) => isCharlotteMapCoordinate(group.latitude, group.longitude));
   mapVisibleBounds = groups.map((group) => [group.latitude, group.longitude]);
 
   groups.forEach((group) => {
@@ -1005,14 +1024,38 @@ function initializePhotoMap(photos) {
       .on("click", () => openMapPhotoSheet(group));
   });
 
-  fitVisibleMapMarkers();
+  mapInstance.on("click", () => {
+    const sheet = document.getElementById("map-photo-sheet");
+    if (sheet) sheet.hidden = true;
+  });
+
+  requestAnimationFrame(() => {
+    mapInstance?.invalidateSize({ pan: false });
+    fitVisibleMapMarkers();
+    window.setTimeout(() => {
+      mapInstance?.invalidateSize({ pan: false });
+      fitVisibleMapMarkers();
+    }, 140);
+  });
 }
 
 function fitVisibleMapMarkers() {
   if (!mapInstance) return;
-  if (mapVisibleBounds.length > 1) mapInstance.fitBounds(mapVisibleBounds, { padding: [62, 62], maxZoom: 15 });
-  else if (mapVisibleBounds.length === 1) mapInstance.setView(mapVisibleBounds[0], 15);
-  else mapInstance.setView(config.mapCenter || [35.2271, -80.8431], config.mapZoom || 11);
+  const isMobile = window.matchMedia("(max-width: 679px)").matches;
+  mapInstance.invalidateSize({ pan: false });
+  if (mapVisibleBounds.length > 1) {
+    const bounds = window.L.latLngBounds(mapVisibleBounds);
+    mapInstance.fitBounds(bounds, {
+      paddingTopLeft: isMobile ? [34, 78] : [66, 66],
+      paddingBottomRight: isMobile ? [34, 176] : [66, 150],
+      maxZoom: isMobile ? 14 : 15,
+      animate: false
+    });
+  } else if (mapVisibleBounds.length === 1) {
+    mapInstance.setView(mapVisibleBounds[0], isMobile ? 14 : 15, { animate: false });
+  } else {
+    mapInstance.setView(CHARLOTTE_MAP_CENTER, 11, { animate: false });
+  }
 }
 
 function centerMapNearUser() {
@@ -1064,6 +1107,12 @@ function openMapPhotoSheet(group) {
   `;
   sheet.querySelector("#close-map-sheet")?.addEventListener("click", () => { sheet.hidden = true; });
   sheet.querySelector("[data-map-feed-photo]")?.addEventListener("click", (event) => navigate(feedLinkForPhoto(event.currentTarget.dataset.mapFeedPhoto)));
+  if (mapInstance && isCharlotteMapCoordinate(group.latitude, group.longitude)) {
+    mapInstance.panTo([group.latitude, group.longitude], { animate: true, duration: 0.25 });
+    if (window.matchMedia("(max-width: 679px)").matches) {
+      window.setTimeout(() => mapInstance?.panBy([0, 74], { animate: true, duration: 0.2 }), 80);
+    }
+  }
 }
 
 function uploadMarkup() {
@@ -1587,6 +1636,7 @@ function renderEventPage() {
 }
 
 async function route(force = false) {
+  window.scrollTo(0, 0);
   const routeInfo = getRoute();
   const routeDogCode = (routeInfo.params.get("dog") || "").toUpperCase();
   if (routeDogCode) setActiveDog(routeDogCode);
