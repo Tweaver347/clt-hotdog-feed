@@ -1,0 +1,13 @@
+Add these copy operations to build.mjs after the dist directory is created.
+Keep the existing code that generates dist/config.js exactly as it is.
+
+Using imports from node:fs/promises:
+
+  await copyFile("manifest.webmanifest", "dist/manifest.webmanifest");
+  await cp("assets", "dist/assets", { recursive: true });
+
+Your import line must include cp and copyFile, for example:
+
+  import { cp, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+
+Do not replace your complete build.mjs with this text. Merge only the missing copy operations.
