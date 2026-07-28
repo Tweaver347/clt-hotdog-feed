@@ -1,0 +1,60 @@
+/* Reliable playful-background hotfix: embeds the pattern and paints it behind the app. */
+.food-pattern { display: none !important; }
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: -360px -160px;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22320%22%20viewBox%3D%220%200%20480%20320%22%3E%0A%20%20%3Cg%20fill%3D%22none%22%20stroke%3D%22%235c3126%22%20stroke-width%3D%226%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%0A%20%20%20%20%3C%21--%20hot%20dog%20--%3E%0A%20%20%20%20%3Cg%20transform%3D%22translate%2826%2028%29%20rotate%28-12%2078%2042%29%22%3E%0A%20%20%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%228%22%20width%3D%22156%22%20height%3D%2268%22%20rx%3D%2234%22%20fill%3D%22%23e6ad3c%22%2F%3E%0A%20%20%20%20%20%20%3Crect%20x%3D%2222%22%20y%3D%2220%22%20width%3D%22112%22%20height%3D%2244%22%20rx%3D%2222%22%20fill%3D%22%23b94b38%22%2F%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M42%2042c12-20%2024%2020%2036%200s24%2020%2036%200%22%20stroke%3D%22%23f4cf3c%22%20stroke-width%3D%228%22%2F%3E%0A%20%20%20%20%3C%2Fg%3E%0A%0A%20%20%20%20%3C%21--%20mustard%20bottle%20--%3E%0A%20%20%20%20%3Cg%20transform%3D%22translate%28235%2035%29%20rotate%288%2040%2068%29%22%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M30%200h20v18H30z%22%20fill%3D%22%23f1c84a%22%2F%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M20%2018h40l12%2026v70c0%2015-12%2027-27%2027H35c-15%200-27-12-27-27V44z%22%20fill%3D%22%23f1c84a%22%2F%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M23%2078h34%22%2F%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M26%2094h28%22%2F%3E%0A%20%20%20%20%3C%2Fg%3E%0A%0A%20%20%20%20%3C%21--%20ketchup%20bottle%20--%3E%0A%20%20%20%20%3Cg%20transform%3D%22translate%28374%20170%29%20rotate%28-9%2040%2068%29%22%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M30%200h20v18H30z%22%20fill%3D%22%23ef6658%22%2F%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M20%2018h40l12%2026v70c0%2015-12%2027-27%2027H35c-15%200-27-12-27-27V44z%22%20fill%3D%22%23ef6658%22%2F%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M23%2078h34%22%2F%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M26%2094h28%22%2F%3E%0A%20%20%20%20%3C%2Fg%3E%0A%0A%20%20%20%20%3C%21--%20second%20hot%20dog%20--%3E%0A%20%20%20%20%3Cg%20transform%3D%22translate%2872%20212%29%20rotate%289%2072%2036%29%20scale%28.82%29%22%3E%0A%20%20%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%228%22%20width%3D%22156%22%20height%3D%2268%22%20rx%3D%2234%22%20fill%3D%22%23e6ad3c%22%2F%3E%0A%20%20%20%20%20%20%3Crect%20x%3D%2222%22%20y%3D%2220%22%20width%3D%22112%22%20height%3D%2244%22%20rx%3D%2222%22%20fill%3D%22%23b94b38%22%2F%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M42%2042c12-20%2024%2020%2036%200s24%2020%2036%200%22%20stroke%3D%22%23f4cf3c%22%20stroke-width%3D%228%22%2F%3E%0A%20%20%20%20%3C%2Fg%3E%0A%20%20%3C%2Fg%3E%0A%3C%2Fsvg%3E%0A");
+  background-repeat: repeat;
+  will-change: transform;
+}
+
+body::before {
+  background-size: 480px 320px;
+  opacity: 0.14;
+  transform: translate3d(-34px, var(--parallax-slow), 0) rotate(-1deg);
+}
+
+body::after {
+  background-size: 650px 433px;
+  background-position: 210px 120px;
+  opacity: 0.075;
+  transform: translate3d(20px, var(--parallax-fast), 0) rotate(2deg);
+}
+
+.app-shell {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+
+html[data-theme="dark"] body::before {
+  opacity: 0.13;
+  filter: brightness(1.55) saturate(1.1);
+}
+
+html[data-theme="dark"] body::after {
+  opacity: 0.07;
+  filter: brightness(1.65) saturate(1.15);
+}
+
+html.hide-decorations body::before,
+html.hide-decorations body::after {
+  display: none;
+}
+
+html.reduce-motion body::before,
+html.reduce-motion body::after {
+  transform: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not(.reduce-motion) body::before,
+  html:not(.reduce-motion) body::after {
+    transform: none;
+  }
+}
