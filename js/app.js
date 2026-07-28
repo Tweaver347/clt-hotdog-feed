@@ -1,4 +1,4 @@
-import { createPhoto, getHotdog, getPhotos, getPhotosForHotdog, isDemoMode, likePhoto, unlikePhoto } from "./data.js";
+import { createPhoto, getHotdog, getNewPhotoCount, getPhotoById, getPhotos, getPhotosForHotdog, isDemoMode, likePhoto, reportPhoto, unlikePhoto } from "./data.js";
 import { getDogChallenge } from "./challenges.js";
 const EVENT_ORGANIZER = {
   handle: "@oliveoliveoxenfree",
@@ -81,6 +81,11 @@ let mapNeighborhoodFilter = "All";
 let mapUserMarker = null;
 let mapVisibleBounds = [];
 let uploadState = freshUploadState();
+let feedPollingTimer = null;
+let currentPhotoRecords = new Map();
+let activeReportPhotoId = null;
+let photoMenuOutsideBound = false;
+const SUCCESS_PHOTO_KEY = "clt-hotdog-last-success-photo";
 
 const MAP_NEIGHBORHOODS = ["All", "Plaza Midwood", "NoDa", "Uptown", "South End", "LoSo", "Other Charlotte"];
 
@@ -286,6 +291,10 @@ function freshUploadState(dogCode = "") {
 }
 
 function destroyMaps() {
+  if (feedPollingTimer) {
+    window.clearInterval(feedPollingTimer);
+    feedPollingTimer = null;
+  }
   if (mapInstance) {
     mapInstance.remove();
     mapInstance = null;
@@ -309,6 +318,38 @@ function activeDogHeaderMarkup() {
   const visible = number != null ? `#${number}` : code.slice(0, 8);
   const label = number != null ? `Active Hot Dog number ${number}` : `Active hot dog code ${code}`;
   return `<span class="dog-header-badge" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">🌭</span><span>${escapeHtml(visible)}</span></span>`;
+}
+
+
+function reportDialogMarkup() {
+  return `
+    <div class="action-dialog-backdrop" id="report-backdrop" hidden></div>
+    <section class="action-dialog report-dialog" id="report-dialog" role="dialog" aria-modal="true" aria-labelledby="report-dialog-title" hidden>
+      <div class="action-dialog-handle" aria-hidden="true"></div>
+      <div class="action-dialog-header">
+        <div>
+          <p class="settings-eyebrow">Community safety</p>
+          <h2 id="report-dialog-title" tabindex="-1">Report this photo</h2>
+        </div>
+        <button class="icon-button" id="close-report-dialog" type="button" aria-label="Close report form">×</button>
+      </div>
+      <p class="report-dialog-help">Choose the closest reason. Reports are anonymous and sent to the organizer for review.</p>
+      <form id="report-form">
+        <fieldset class="report-reasons">
+          <legend class="sr-only">Reason for reporting</legend>
+          <label><input type="radio" name="report-reason" value="inappropriate" required /><span><strong>Inappropriate content</strong><small>Unsafe, explicit, hateful, or otherwise unsuitable.</small></span></label>
+          <label><input type="radio" name="report-reason" value="consent" /><span><strong>Photo consent concern</strong><small>Someone pictured may not have agreed to public sharing.</small></span></label>
+          <label><input type="radio" name="report-reason" value="spam" /><span><strong>Spam or unrelated</strong><small>The image does not belong in the community feed.</small></span></label>
+          <label><input type="radio" name="report-reason" value="wrong_location" /><span><strong>Incorrect location</strong><small>The listed place appears to be wrong.</small></span></label>
+          <label><input type="radio" name="report-reason" value="other" /><span><strong>Something else</strong><small>Another issue the organizer should review.</small></span></label>
+        </fieldset>
+        <div class="action-dialog-actions">
+          <button class="secondary-button" id="cancel-report" type="button">Cancel</button>
+          <button class="primary-button" id="submit-report" type="submit"><span aria-hidden="true">⚑</span> Submit report</button>
+        </div>
+      </form>
+    </section>
+  `;
 }
 
 function shell(content, activeTab = "feed", subtitle = "Charlotte community photo feed") {
@@ -335,6 +376,7 @@ function shell(content, activeTab = "feed", subtitle = "Charlotte community phot
         </div>
       </header>
       ${accessibilityPanelMarkup()}
+      ${reportDialogMarkup()}
       <div id="main-content" class="route-content" tabindex="-1">${content}</div>
       <nav class="bottom-nav" aria-label="Primary navigation">
         <a class="nav-item ${activeTab === "event" ? "active" : ""}" href="#/event${dogQuery}" ${activeTab === "event" ? 'aria-current="page"' : ""}>
@@ -381,6 +423,10 @@ function attachShellEvents() {
     route(true);
     showToast("Display preferences reset.");
   });
+  document.getElementById("close-report-dialog")?.addEventListener("click", closeReportDialog);
+  document.getElementById("cancel-report")?.addEventListener("click", closeReportDialog);
+  document.getElementById("report-backdrop")?.addEventListener("click", closeReportDialog);
+  document.getElementById("report-form")?.addEventListener("submit", submitReport);
   applyPreferences();
 }
 
@@ -400,7 +446,7 @@ function demoNotice() {
 function testWarning() {
   return `
     <div class="notice warning">
-      <strong>Testing build:</strong> there is no moderation yet. A submitted photo becomes public immediately, so only share this test link with people you trust.
+      <strong>Testing build:</strong> photos publish immediately. The new report tool sends concerns to the organizer for review, but it does not automatically remove a photo.
     </div>
   `;
 }
@@ -409,6 +455,19 @@ function dogLabel(photo) {
   if (photo.hotdog_number !== null && photo.hotdog_number !== undefined) return `Hot Dog #${photo.hotdog_number}`;
   if (photo.hotdog_code) return `Dog ${photo.hotdog_code}`;
   return "Community upload";
+}
+
+function compactLocationMeta(photo) {
+  const place = String(photo.place_name || "Charlotte").trim();
+  const detail = String(photo.location_detail || "").trim();
+  const normalizedPlace = place.toLowerCase();
+  const normalizedDetail = detail.toLowerCase();
+  const parts = [];
+  if (detail && normalizedDetail !== normalizedPlace && normalizedDetail !== "charlotte" && !normalizedPlace.includes(normalizedDetail)) {
+    parts.push(detail);
+  }
+  parts.push(dogLabel(photo), formatRelativeTime(photo.created_at));
+  return parts.filter(Boolean).join(" · ");
 }
 
 function photoCard(photo, likedIds) {
@@ -421,20 +480,164 @@ function photoCard(photo, likedIds) {
       </div>
       <div class="photo-meta">
         <div class="location-line">
-          <span class="location-pin" aria-hidden="true">📍</span>
-          <div>
-            <div class="location-main">${escapeHtml(photo.place_name)}</div>
-            <div class="location-sub">${escapeHtml(photo.location_detail || "Charlotte")} · ${escapeHtml(dogLabel(photo))} · ${escapeHtml(formatRelativeTime(photo.created_at))}</div>
+          <div class="location-main"><span class="location-pin" aria-hidden="true">📍</span><span>${escapeHtml(photo.place_name)}</span></div>
+          <div class="location-sub">${escapeHtml(compactLocationMeta(photo))}</div>
+        </div>
+        <div class="photo-actions">
+          <button class="like-button ${liked ? "liked" : ""}" data-like-photo="${escapeHtml(photo.id)}" data-liked="${liked ? "true" : "false"}" aria-label="${liked ? `Remove your like. ${count} likes` : `Like this photo. ${count} likes`}" aria-pressed="${liked ? "true" : "false"}">
+            <span class="heart" aria-hidden="true">${liked ? "♥" : "♡"}</span>
+            <span class="like-action sr-only" data-like-action>${liked ? "Liked" : "Like"}</span>
+            <span class="like-count" data-like-count>${count}</span>
+          </button>
+          <div class="post-menu-wrap">
+            <button class="post-menu-button" type="button" data-post-menu-trigger="${escapeHtml(photo.id)}" aria-label="More options for this photo" aria-haspopup="menu" aria-expanded="false">•••</button>
+            <div class="post-menu" data-post-menu="${escapeHtml(photo.id)}" role="menu" hidden>
+              <button type="button" role="menuitem" data-share-photo="${escapeHtml(photo.id)}"><span aria-hidden="true">↗</span><span>Share photo</span></button>
+              <button type="button" role="menuitem" class="report-menu-item" data-report-photo="${escapeHtml(photo.id)}"><span aria-hidden="true">⚑</span><span>Report photo</span></button>
+            </div>
           </div>
         </div>
-        <button class="like-button ${liked ? "liked" : ""}" data-like-photo="${escapeHtml(photo.id)}" data-liked="${liked ? "true" : "false"}" aria-label="${liked ? `Remove your like. ${count} likes` : `Like this photo. ${count} likes`}" aria-pressed="${liked ? "true" : "false"}">
-          <span class="heart" aria-hidden="true">${liked ? "♥" : "♡"}</span>
-          <span class="like-action" data-like-action>${liked ? "Liked" : "Like"}</span>
-          <span class="like-count" data-like-count>${count}</span>
-        </button>
       </div>
     </article>
   `;
+}
+
+function closePhotoMenus(exceptId = null) {
+  document.querySelectorAll("[data-post-menu]").forEach((menu) => {
+    if (exceptId && menu.dataset.postMenu === exceptId) return;
+    menu.hidden = true;
+    const trigger = document.querySelector(`[data-post-menu-trigger="${CSS.escape(menu.dataset.postMenu)}"]`);
+    trigger?.setAttribute("aria-expanded", "false");
+  });
+}
+
+function shareUrlForPhoto(photo) {
+  const url = new URL(window.location.href);
+  const dogCode = photo?.hotdog_code || getActiveDog();
+  url.hash = `/feed?focus=${encodeURIComponent(photo.id)}${dogCode ? `&dog=${encodeURIComponent(dogCode)}` : ""}`;
+  return url.toString();
+}
+
+async function sharePhoto(photo) {
+  if (!photo) return;
+  const url = shareUrlForPhoto(photo);
+  const text = `${dogLabel(photo)} stopped at ${photo.place_name}. See it on the CLT Hot Dog Feed.`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "CLT Hot Dog Feed", text, url });
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(`${text} ${url}`);
+    showToast("Photo link copied.");
+  } catch {
+    const input = document.createElement("textarea");
+    input.value = `${text} ${url}`;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+    showToast("Photo link copied.");
+  }
+}
+
+function openReportDialog(photoId) {
+  activeReportPhotoId = photoId;
+  closePhotoMenus();
+  const dialog = document.getElementById("report-dialog");
+  const backdrop = document.getElementById("report-backdrop");
+  if (!dialog || !backdrop) return;
+  document.getElementById("report-form")?.reset();
+  dialog.hidden = false;
+  backdrop.hidden = false;
+  document.body.classList.add("action-dialog-open");
+  window.setTimeout(() => document.getElementById("report-dialog-title")?.focus(), 0);
+}
+
+function closeReportDialog() {
+  const dialog = document.getElementById("report-dialog");
+  const backdrop = document.getElementById("report-backdrop");
+  if (dialog) dialog.hidden = true;
+  if (backdrop) backdrop.hidden = true;
+  document.body.classList.remove("action-dialog-open");
+  activeReportPhotoId = null;
+}
+
+async function submitReport(event) {
+  event.preventDefault();
+  const reason = new FormData(event.currentTarget).get("report-reason");
+  if (!reason || !activeReportPhotoId) {
+    showToast("Choose a report reason.", "error");
+    return;
+  }
+  const button = document.getElementById("submit-report");
+  if (button) button.disabled = true;
+  try {
+    const result = await reportPhoto(activeReportPhotoId, String(reason));
+    closeReportDialog();
+    showToast(result.duplicate ? "You already reported this photo." : "Report sent to the organizer. Thank you.");
+  } catch (error) {
+    showToast(error.message || "The report could not be sent.", "error");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function attachPhotoActions() {
+  document.querySelectorAll("[data-post-menu-trigger]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const photoId = button.dataset.postMenuTrigger;
+      const menu = document.querySelector(`[data-post-menu="${CSS.escape(photoId)}"]`);
+      if (!menu) return;
+      const willOpen = menu.hidden;
+      closePhotoMenus(willOpen ? photoId : null);
+      menu.hidden = !willOpen;
+      button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      if (willOpen) menu.querySelector("button")?.focus();
+    });
+  });
+  document.querySelectorAll("[data-share-photo]").forEach((button) => {
+    button.addEventListener("click", () => {
+      closePhotoMenus();
+      sharePhoto(currentPhotoRecords.get(button.dataset.sharePhoto));
+    });
+  });
+  document.querySelectorAll("[data-report-photo]").forEach((button) => {
+    button.addEventListener("click", () => openReportDialog(button.dataset.reportPhoto));
+  });
+  if (!photoMenuOutsideBound) {
+    photoMenuOutsideBound = true;
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest?.(".post-menu-wrap")) closePhotoMenus();
+    });
+  }
+}
+
+function startNewPhotoPolling(photos) {
+  if (feedPollingTimer) window.clearInterval(feedPollingTimer);
+  const latestTimestamp = photos.reduce((latest, photo) => {
+    const value = new Date(photo.created_at).getTime();
+    return value > latest ? value : latest;
+  }, 0);
+  if (!latestTimestamp) return;
+  const sinceIso = new Date(latestTimestamp).toISOString();
+  const indicator = document.getElementById("new-photo-indicator");
+  feedPollingTimer = window.setInterval(async () => {
+    if (document.hidden || getRoute().path !== "/feed") return;
+    try {
+      const count = await getNewPhotoCount(sinceIso);
+      if (!indicator || count < 1) return;
+      indicator.hidden = false;
+      const label = indicator.querySelector("[data-new-photo-label]");
+      if (label) label.textContent = `${count} new photo${count === 1 ? "" : "s"}`;
+    } catch {
+      // A polling failure should never interrupt browsing.
+    }
+  }, 25_000);
 }
 
 function communityCounterMarkup(photos) {
@@ -464,6 +667,7 @@ async function renderFeed(routeInfo) {
     ]);
     if (dog) setActiveDogDetails(dog);
     const likedIds = getLikedPhotoIds();
+    currentPhotoRecords = new Map(photos.map((photo) => [photo.id, photo]));
     const activeDogMarkup = dog
       ? `<div class="active-dog">
           <div><strong>🌭 ${dog.printed_number != null ? `Hot Dog #${dog.printed_number}` : dog.public_code} is active</strong><span>Photos you add from this link will be connected to ${escapeHtml(dog.public_code)}.</span></div>
@@ -485,6 +689,7 @@ async function renderFeed(routeInfo) {
           <p>Scan a printed dog, add one photo and a location, then watch the city-wide feed grow.</p>
           <button class="primary-button" data-add-photo>📷 Add your photo</button>
         </section>
+        <button class="new-photo-indicator" id="new-photo-indicator" type="button" hidden><span aria-hidden="true">↻</span><span data-new-photo-label>New photos</span><span>Show</span></button>
         <div class="feed-toolbar">
           <h2>Photo feed</h2>
           <div class="segmented" aria-label="Sort photos">
@@ -513,6 +718,9 @@ async function renderFeed(routeInfo) {
     });
 
     attachLikeButtons();
+    attachPhotoActions();
+    document.getElementById("new-photo-indicator")?.addEventListener("click", () => renderFeed(getRoute()));
+    startNewPhotoPolling(photos);
 
     const focusedPhotoId = routeInfo.params.get("uploaded") || routeInfo.params.get("focus");
     if (focusedPhotoId) {
@@ -1111,15 +1319,88 @@ async function submitPhoto() {
       locationSource: uploadState.location.source,
       hotdogCode: uploadState.dog?.public_code || uploadState.dogCode || null
     });
-    showToast("Photo published to the feed.");
     const dogCode = uploadState.dog?.public_code || uploadState.dogCode;
+    sessionStorage.setItem(SUCCESS_PHOTO_KEY, JSON.stringify(photo));
     uploadState = freshUploadState(dogCode);
-    navigate(`/feed?uploaded=${encodeURIComponent(photo.id)}${dogCode ? `&dog=${encodeURIComponent(dogCode)}` : ""}`);
+    navigate(`/success?photo=${encodeURIComponent(photo.id)}${dogCode ? `&dog=${encodeURIComponent(dogCode)}` : ""}`);
   } catch (error) {
     uploadState.submitting = false;
     renderUpload(getRoute());
     showToast(error.message || "The photo could not be published.", "error");
   }
+}
+
+function calculateDogMilestones(photos) {
+  const placeCount = new Set(photos.map((photo) => `${photo.place_name}|${photo.location_detail || ""}`)).size;
+  const neighborhoodCount = new Set(photos.map(neighborhoodForPhoto)).size;
+  const totalLikes = photos.reduce((total, photo) => total + Number(photo.like_count || 0), 0);
+  return [
+    { icon: "📷", name: "First memory", detail: "Add the first journey photo", value: photos.length, goal: 1 },
+    { icon: "📍", name: "On the move", detail: "Visit 3 different places", value: placeCount, goal: 3 },
+    { icon: "🗺️", name: "Neighborhood hopper", detail: "Reach 2 Charlotte neighborhoods", value: neighborhoodCount, goal: 2 },
+    { icon: "🌭", name: "Memory maker", detail: "Collect 5 journey photos", value: photos.length, goal: 5 },
+    { icon: "♥", name: "Crowd favorite", detail: "Earn 10 likes across the journey", value: totalLikes, goal: 10 }
+  ].map((milestone) => ({ ...milestone, unlocked: milestone.value >= milestone.goal }));
+}
+
+function milestoneMarkup(photos) {
+  const milestones = calculateDogMilestones(photos);
+  const unlocked = milestones.filter((milestone) => milestone.unlocked).length;
+  return `
+    <section class="milestone-panel" aria-labelledby="milestone-title">
+      <div class="milestone-heading"><div><p class="journey-eyebrow"><span aria-hidden="true">🏅</span> Dog milestones</p><h2 id="milestone-title">${unlocked} of ${milestones.length} unlocked</h2></div><span class="milestone-count">${unlocked}/${milestones.length}</span></div>
+      <div class="milestone-grid">
+        ${milestones.map((milestone) => `
+          <div class="milestone-card ${milestone.unlocked ? "unlocked" : "locked"}" aria-label="${escapeHtml(milestone.name)}: ${milestone.unlocked ? "unlocked" : `${Math.min(milestone.value, milestone.goal)} of ${milestone.goal}`}" >
+            <span class="milestone-icon" aria-hidden="true">${milestone.unlocked ? milestone.icon : "○"}</span>
+            <div><strong>${escapeHtml(milestone.name)}</strong><span>${escapeHtml(milestone.detail)}</span><small>${milestone.unlocked ? "Unlocked" : `${Math.min(milestone.value, milestone.goal)} / ${milestone.goal}`}</small></div>
+          </div>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+async function renderSuccessPage(routeInfo) {
+  destroyMaps();
+  const photoId = routeInfo.params.get("photo");
+  const dogCode = (routeInfo.params.get("dog") || getActiveDog() || "").toUpperCase();
+  let photo = null;
+  try {
+    photo = JSON.parse(sessionStorage.getItem(SUCCESS_PHOTO_KEY) || "null");
+  } catch {
+    photo = null;
+  }
+  if (!photo || photo.id !== photoId) {
+    try {
+      photo = await getPhotoById(photoId);
+    } catch {
+      photo = null;
+    }
+  }
+  if (photo) currentPhotoRecords = new Map([[photo.id, photo]]);
+  const dogName = photo ? dogLabel(photo) : (dogCode ? `Dog ${dogCode}` : "your hot dog");
+  const content = `
+    <main class="page success-page">
+      <section class="success-card">
+        <div class="success-check" aria-hidden="true">✓</div>
+        <p class="success-eyebrow">Photo added</p>
+        <h1>Your stop joined ${escapeHtml(dogName)}'s journey!</h1>
+        <p>Thanks for helping build Charlotte's community photo map.</p>
+        ${photo ? `<img class="success-photo" src="${escapeHtml(photo.image_url)}" alt="Your newly submitted photo near ${escapeHtml(photo.place_name)}" />` : ""}
+        <div class="success-location"><span aria-hidden="true">📍</span><div><strong>${escapeHtml(photo?.place_name || "Charlotte")}</strong><span>${escapeHtml(photo ? compactLocationMeta(photo) : "Published to the feed")}</span></div></div>
+        <div class="success-actions">
+          ${photo ? `<button class="primary-button" id="success-share"><span aria-hidden="true">↗</span> Share this stop</button>` : ""}
+          ${photo ? `<a class="secondary-button" href="#/feed?focus=${encodeURIComponent(photo.id)}${dogCode ? `&dog=${encodeURIComponent(dogCode)}` : ""}"><span aria-hidden="true">▦</span> View in feed</a>` : `<a class="secondary-button" href="#/feed${dogCode ? `?dog=${encodeURIComponent(dogCode)}` : ""}">Return to feed</a>`}
+          ${dogCode ? `<a class="secondary-button" href="#/journey?dog=${encodeURIComponent(dogCode)}"><span aria-hidden="true">↝</span> View dog journey</a>` : ""}
+        </div>
+        <aside class="pass-along-note"><span aria-hidden="true">🌭</span><div><strong>Keep it moving</strong><p>Keep the keychain or pass it to someone new so this hot dog's journey can continue.</p></div></aside>
+      </section>
+    </main>
+  `;
+  app.innerHTML = shell(content, "upload", "Your photo is live");
+  attachShellEvents();
+  document.getElementById("success-share")?.addEventListener("click", () => sharePhoto(photo));
 }
 
 async function renderJourneyPage(routeInfo) {
@@ -1139,6 +1420,7 @@ async function renderJourneyPage(routeInfo) {
     const { dog, photos } = await getPhotosForHotdog(dogCode, "oldest");
     if (dog) setActiveDogDetails(dog);
     const likedIds = getLikedPhotoIds();
+    currentPhotoRecords = new Map(photos.map((photo) => [photo.id, photo]));
     const challenge = getDogChallenge(dog, dogCode);
     const placeCount = new Set(photos.map((photo) => `${photo.place_name}|${photo.location_detail || ""}`)).size;
     const totalLikes = photos.reduce((total, photo) => total + Number(photo.like_count || 0), 0);
@@ -1159,6 +1441,7 @@ async function renderJourneyPage(routeInfo) {
           <div><strong>${placeCount}</strong><span>Places</span></div>
           <div><strong>${totalLikes}</strong><span>Likes</span></div>
         </section>
+        ${milestoneMarkup(photos)}
         <section class="challenge-mini"><span aria-hidden="true">🎯</span><div><strong>Photo challenge #${challenge.challengeNumber}</strong><p>${escapeHtml(challenge.prompt)}</p></div></section>
         ${journeyPhotos}
       </main>
@@ -1166,6 +1449,7 @@ async function renderJourneyPage(routeInfo) {
     app.innerHTML = shell(content, "journey", `${dogName}'s community journey`);
     attachShellEvents();
     attachLikeButtons();
+    attachPhotoActions();
   } catch (error) {
     app.innerHTML = shell(`<main class="page"><div class="empty-state"><div class="empty-icon">⚠️</div><h2>Could not load this journey</h2><p>${escapeHtml(error.message)}</p><button class="primary-button" id="retry-journey"><span aria-hidden="true">↻</span> Try again</button></div></main>`, "journey");
     attachShellEvents();
@@ -1325,6 +1609,10 @@ async function route(force = false) {
     await renderJourneyPage(routeInfo);
     return;
   }
+  if (routeInfo.path === "/success") {
+    await renderSuccessPage(routeInfo);
+    return;
+  }
   if (routeInfo.path === "/upload") {
     await renderUpload(routeInfo, force);
     return;
@@ -1335,7 +1623,11 @@ async function route(force = false) {
 window.addEventListener("hashchange", () => route());
 window.addEventListener("scroll", updateParallax, { passive: true });
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeAccessibilityPanel();
+  if (event.key === "Escape") {
+    closePhotoMenus();
+    closeReportDialog();
+    closeAccessibilityPanel();
+  }
 });
 systemDarkQuery.addEventListener?.("change", () => {
   if (preferences.theme === "system") applyPreferences();

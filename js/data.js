@@ -10,6 +10,7 @@ import {
 
 const DEMO_PHOTOS_KEY = "clt-hotdog-demo-photos-v1";
 const DEMO_LIKES_KEY = "clt-hotdog-demo-likes-v1";
+const DEMO_REPORTS_KEY = "clt-hotdog-demo-reports-v1";
 
 const demoSeed = [
   {
@@ -160,6 +161,27 @@ export async function getPhotos(sort = "newest") {
   const select = "id,image_path,latitude,longitude,place_name,location_detail,location_source,like_count,created_at,hotdogs(public_code,printed_number)";
   const photos = await rest(`photos?select=${encodeURIComponent(select)}&order=${encodeURIComponent(order)}&limit=250`);
   return photos.map(normalizeLivePhoto);
+}
+
+
+export async function getPhotoById(photoId) {
+  if (!photoId) return null;
+  if (isDemoMode()) return getDemoPhotos().find((photo) => photo.id === photoId) || null;
+
+  const select = "id,image_path,latitude,longitude,place_name,location_detail,location_source,like_count,created_at,hotdogs(public_code,printed_number)";
+  const photos = await rest(`photos?select=${encodeURIComponent(select)}&id=eq.${encodeURIComponent(photoId)}&limit=1`);
+  return photos[0] ? normalizeLivePhoto(photos[0]) : null;
+}
+
+export async function getNewPhotoCount(sinceIso) {
+  if (!sinceIso) return 0;
+  if (isDemoMode()) {
+    const since = new Date(sinceIso).getTime();
+    return getDemoPhotos().filter((photo) => new Date(photo.created_at).getTime() > since).length;
+  }
+
+  const rows = await rest(`photos?select=id&created_at=gt.${encodeURIComponent(sinceIso)}&limit=100`);
+  return rows.length;
 }
 
 export async function getHotdog(code) {
@@ -344,4 +366,42 @@ export async function unlikePhoto(photoId) {
   });
   unmarkPhotoLiked(photoId);
   return { removed: result === true };
+}
+
+
+export async function reportPhoto(photoId, reason) {
+  const allowedReasons = new Set(["inappropriate", "consent", "spam", "wrong_location", "other"]);
+  if (!photoId) throw new Error("No photo was selected.");
+  if (!allowedReasons.has(reason)) throw new Error("Choose a report reason.");
+
+  const deviceHash = await sha256(getOrCreateDeviceId());
+  if (isDemoMode()) {
+    let reports = [];
+    try {
+      reports = JSON.parse(localStorage.getItem(DEMO_REPORTS_KEY) || "[]");
+    } catch {
+      reports = [];
+    }
+    if (reports.some((report) => report.photo_id === photoId && report.device_hash === deviceHash)) {
+      return { duplicate: true };
+    }
+    reports.push({ photo_id: photoId, device_hash: deviceHash, reason, created_at: new Date().toISOString() });
+    localStorage.setItem(DEMO_REPORTS_KEY, JSON.stringify(reports));
+    return { duplicate: false };
+  }
+
+  try {
+    await rest("reports", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "return=minimal"
+      },
+      body: JSON.stringify({ photo_id: photoId, device_hash: deviceHash, reason })
+    });
+    return { duplicate: false };
+  } catch (error) {
+    if (error.status === 409 || /duplicate/i.test(error.message)) return { duplicate: true };
+    throw error;
+  }
 }
