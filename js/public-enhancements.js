@@ -84,6 +84,9 @@ function activeNumber() {
 }
 
 function scrubNode(root = document) {
+  const scope = root?.querySelectorAll ? root : document;
+  scope.querySelectorAll?.(".milestone-panel").forEach((panel) => panel.remove());
+
   const code = activeCode();
   if (!code) return;
   const number = activeNumber();
