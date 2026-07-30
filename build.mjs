@@ -7,6 +7,12 @@ const output = path.join(root, "dist");
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabasePublishableKey =
   process.env.SUPABASE_PUBLISHABLE_KEY;
+const configuredModeratorPath = String(
+  process.env.MODERATOR_PATH || "/moderator-8f3c2a"
+).trim();
+const moderatorPath = configuredModeratorPath.startsWith("/")
+  ? configuredModeratorPath
+  : `/${configuredModeratorPath}`;
 
 if (!supabaseUrl) {
   throw new Error("Missing SUPABASE_URL environment variable.");
@@ -27,10 +33,13 @@ await mkdir(output, {
   recursive: true
 });
 
-// Copy the public application files.
+// Copy every public application file referenced by index.html. Files omitted
+// from this list are not deployed because Wrangler serves only ./dist.
 for (const item of [
   "index.html",
   "styles.css",
+  "moderator.css",
+  "manifest.webmanifest",
   "js",
   "assets"
 ]) {
@@ -47,6 +56,7 @@ const config = {
   supabaseAnonKey: supabasePublishableKey,
   forceDemoMode: false,
   defaultHotdogCode: "DEMO42",
+  moderatorPath,
   mapCenter: [35.2271, -80.8431],
   mapZoom: 11,
   geocoderBaseUrl:
