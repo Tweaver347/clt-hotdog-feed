@@ -75,21 +75,22 @@ function photoCard(photo) {
   `;
 }
 
-function announcementForm(item = {}) {
+function announcementForm(item) {
+  const current = item ?? {};
   const local = (value) => value ? new Date(value).toISOString().slice(0, 16) : "";
   return `
     <section class="moderator-panel">
       <div class="moderator-section-heading">
         <div><p class="moderator-eyebrow">Site-wide popup</p><h2>Current announcement</h2></div>
-        <button class="secondary-button" type="button" data-clear-announcement>Clear</button>
+        <button class="secondary-button" type="button" data-clear-announcement ${current.id ? "" : "disabled"}>Clear</button>
       </div>
       <form id="announcement-form" class="moderator-form">
-        <label>Title<input name="title" maxlength="100" required value="${escapeHtml(item.title || "")}" /></label>
-        <label>Body<textarea name="body" maxlength="600" required>${escapeHtml(item.body || "")}</textarea></label>
-        <label>Optional image URL<input name="image_url" type="url" value="${escapeHtml(item.image_url || "")}" placeholder="https://..." /></label>
+        <label>Title<input name="title" maxlength="100" required value="${escapeHtml(current.title || "")}" /></label>
+        <label>Body<textarea name="body" maxlength="600" required>${escapeHtml(current.body || "")}</textarea></label>
+        <label>Optional image URL<input name="image_url" type="url" value="${escapeHtml(current.image_url || "")}" placeholder="https://..." /></label>
         <div class="moderator-form-grid">
-          <label>Start time<input name="starts_at" type="datetime-local" required value="${local(item.starts_at)}" /></label>
-          <label>Expiration time<input name="expires_at" type="datetime-local" required value="${local(item.expires_at)}" /></label>
+          <label>Start time<input name="starts_at" type="datetime-local" required value="${local(current.starts_at)}" /></label>
+          <label>Expiration time<input name="expires_at" type="datetime-local" required value="${local(current.expires_at)}" /></label>
         </div>
         <button class="primary-button" type="submit">Publish announcement</button>
         <p class="moderator-help">Visitors see it once per device. Editing creates a new announcement ID so dismissed devices see the new version.</p>
