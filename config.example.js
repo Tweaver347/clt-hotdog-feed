@@ -4,6 +4,7 @@ window.APP_CONFIG = {
   supabaseAnonKey: "",
   forceDemoMode: false,
   defaultHotdogCode: "DEMO42",
+  moderatorPath: "/moderator-8f3c2a",
   mapCenter: [35.2271, -80.8431],
   mapZoom: 11,
   geocoderBaseUrl: "https://nominatim.openstreetmap.org",
