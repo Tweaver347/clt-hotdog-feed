@@ -48,6 +48,8 @@ if (!isModerator) {
   initializeAnnouncements();
   scrubVisibleHotdogCodes();
 } else {
+  document.documentElement.classList.add("moderator-mode");
+  document.body.classList.add("moderator-mode");
   document.title = "CLT Hot Dog Feed Moderator";
   await import("./moderator.js?v=moderation-2");
 }
