@@ -49,5 +49,5 @@ if (!isModerator) {
   scrubVisibleHotdogCodes();
 } else {
   document.title = "CLT Hot Dog Feed Moderator";
-  await import("./moderator.js");
+  await import("./moderator.js?v=moderation-2");
 }
