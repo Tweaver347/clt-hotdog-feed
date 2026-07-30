@@ -4,6 +4,33 @@ const moderatorPath = String(config.moderatorPath || "/moderator-8f3c2a").replac
 const currentPath = window.location.pathname.replace(/\/$/, "") || "/";
 const isModerator = currentPath === moderatorPath;
 
+async function importPublicApp() {
+  // app.js historically initializes from a DOMContentLoaded listener. Because
+  // it is now loaded through a dynamic import, that event can fire before the
+  // module finishes downloading, leaving #app empty. During the import, make
+  // late DOMContentLoaded listeners run immediately once the DOM is ready.
+  const nativeAddEventListener = window.addEventListener;
+
+  window.addEventListener = function patchedAddEventListener(type, listener, options) {
+    if (type === "DOMContentLoaded" && document.readyState !== "loading") {
+      const event = new Event("DOMContentLoaded");
+      queueMicrotask(() => {
+        if (typeof listener === "function") listener.call(window, event);
+        else listener?.handleEvent?.(event);
+      });
+      return;
+    }
+
+    return nativeAddEventListener.call(window, type, listener, options);
+  };
+
+  try {
+    await import("./app.js");
+  } finally {
+    window.addEventListener = nativeAddEventListener;
+  }
+}
+
 if (!isModerator) {
   const originalFetch = window.fetch.bind(window);
   window.fetch = (input, init) => {
@@ -16,7 +43,7 @@ if (!isModerator) {
     return originalFetch(input, init);
   };
 
-  await import("./app.js");
+  await importPublicApp();
   const { initializeAnnouncements, scrubVisibleHotdogCodes } = await import("./public-enhancements.js");
   initializeAnnouncements();
   scrubVisibleHotdogCodes();
