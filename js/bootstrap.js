@@ -47,6 +47,7 @@ if (!isModerator) {
   const { initializeAnnouncements, scrubVisibleHotdogCodes } = await import("./public-enhancements.js");
   initializeAnnouncements();
   scrubVisibleHotdogCodes();
+  await import("./live-camera-only.js?v=camera-only-1");
 } else {
   document.documentElement.classList.add("moderator-mode");
   document.body.classList.add("moderator-mode");
