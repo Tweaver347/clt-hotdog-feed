@@ -48,6 +48,7 @@ if (!isModerator) {
   initializeAnnouncements();
   scrubVisibleHotdogCodes();
   await import("./live-camera-only.js?v=camera-only-1");
+  await import("./public-publish-flow.js?v=publish-flow-1");
 } else {
   document.documentElement.classList.add("moderator-mode");
   document.body.classList.add("moderator-mode");
