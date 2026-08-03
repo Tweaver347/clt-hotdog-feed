@@ -97,6 +97,7 @@ function buildSlides(photos, settings) {
   randomPhotos.slice(6, 8).forEach((photo) => result.push({ type: "photo", photo }));
   if (topPhoto) result.push({ type: "favorite", photo: topPhoto });
   result.push({ type: "fun-stat", stat: fun[2] || fun[0] || DEFAULT_SETTINGS.fun_stats[2] });
+  result.push({ type: "olive-thanks" });
   result.push({
     type: "closing",
     title: settings.closing_title || DEFAULT_SETTINGS.closing_title,
@@ -141,6 +142,9 @@ function injectStyles() {
     .rewind-fun-emoji { font-size: clamp(70px, 21vw, 145px); }
     .rewind-map-list { width: min(640px, 100%); display: grid; gap: 9px; margin-top: 26px; text-align: left; }
     .rewind-map-row { display: flex; justify-content: space-between; gap: 14px; padding: 13px 16px; border-radius: 16px; background: rgba(255,255,255,.1); }
+    .rewind-thanks-icon { font-size: clamp(78px, 24vw, 160px); filter: drop-shadow(0 16px 28px rgba(0,0,0,.28)); }
+    .rewind-thanks-copy { width: min(620px, 100%); padding: 22px; border: 1px solid rgba(255,255,255,.18); border-radius: 24px; background: rgba(255,255,255,.09); backdrop-filter: blur(14px); }
+    .rewind-thanks-copy p { font-size: clamp(17px, 4.2vw, 21px); }
     .rewind-ending-actions { width: min(560px, 100%); display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 24px; }
     .rewind-ending-actions .rewind-button { display: grid; place-items: center; border-radius: 16px; }
     .rewind-ending-actions .wide { grid-column: 1 / -1; }
@@ -209,6 +213,16 @@ function slideMarkup(slide) {
         ${slide.neighborhoods.slice(0, 5).map(([name, count]) => `<div class="rewind-map-row"><strong>${escapeHtml(name)}</strong><span>${count} photo${count === 1 ? "" : "s"}</span></div>`).join("")}
       </div>
     </section>`;
+  if (slide.type === "olive-thanks") return `
+    <section class="rewind-slide">
+      <div class="rewind-thanks-icon" aria-hidden="true">🫒</div>
+      <div class="rewind-kicker">A very special thank-you</div>
+      <div class="rewind-thanks-copy">
+        <h2>Thank you, Olive!</h2>
+        <p>Thank you for bringing Charlotte businesses and the community together for a silly little hot dog event that turned into such an amazing day.</p>
+        <p>Everyone appreciates the time, care, and hard work you put into making this event happen. You gave all of us a reason to laugh, explore the city, and make some unforgettable memories together.</p>
+      </div>
+    </section>`;
   return `
     <section class="rewind-slide">
       <div class="rewind-hotdog" aria-hidden="true">🌭</div>
@@ -256,7 +270,10 @@ function stopTimer() {
 
 function startTimer() {
   stopTimer();
-  remaining = currentIndex === slides.length - 1 ? 12000 : SLIDE_DURATION;
+  const slide = slides[currentIndex];
+  remaining = slide?.type === "closing"
+    ? 12000
+    : slide?.type === "olive-thanks" ? 10000 : SLIDE_DURATION;
   startedAt = performance.now();
   paused = false;
   tick();
