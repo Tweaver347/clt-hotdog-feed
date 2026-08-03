@@ -3,6 +3,7 @@ import { config } from "./utils.js";
 const moderatorPath = String(config.moderatorPath || "/moderator-8f3c2a").replace(/\/$/, "");
 const currentPath = window.location.pathname.replace(/\/$/, "") || "/";
 const isModerator = currentPath === moderatorPath;
+const isRewind = currentPath === "/rewind";
 
 async function importPublicApp() {
   // app.js historically initializes from a DOMContentLoaded listener. Because
@@ -31,7 +32,10 @@ async function importPublicApp() {
   }
 }
 
-if (!isModerator) {
+if (isRewind) {
+  await import("./rewind.js?v=rewind-1");
+  await import("./rewind-overrides.js?v=rewind-1");
+} else if (!isModerator) {
   const originalFetch = window.fetch.bind(window);
   window.fetch = (input, init) => {
     const url = typeof input === "string" ? input : input?.url;
@@ -54,4 +58,5 @@ if (!isModerator) {
   document.body.classList.add("moderator-mode");
   document.title = "CLT Hot Dog Feed Moderator";
   await import("./moderator.js?v=moderation-2");
+  await import("./moderator-rewind.js?v=rewind-1");
 }
