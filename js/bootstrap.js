@@ -34,6 +34,7 @@ async function importPublicApp() {
 
 if (isRewind) {
   await import("./rewind.js?v=rewind-1");
+  await import("./rewind-overrides.js?v=rewind-1");
 } else if (!isModerator) {
   const originalFetch = window.fetch.bind(window);
   window.fetch = (input, init) => {
