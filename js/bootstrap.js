@@ -52,7 +52,6 @@ if (isRewind) {
   const { initializeAnnouncements, scrubVisibleHotdogCodes } = await import("./public-enhancements.js");
   initializeAnnouncements();
   scrubVisibleHotdogCodes();
-  await import("./live-camera-only.js?v=camera-only-1");
   await import("./public-publish-flow.js?v=publish-flow-1");
   await import("./feed-rewind-link.js?v=rewind-3");
 } else {
