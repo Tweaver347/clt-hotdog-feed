@@ -33,7 +33,7 @@ async function importPublicApp() {
 }
 
 if (isRewind) {
-  await import("./rewind.js?v=rewind-1");
+  await import("./rewind.js?v=rewind-3");
   await import("./rewind-overrides.js?v=rewind-1");
   await import("./rewind-photo-layout.js?v=rewind-2");
 } else if (!isModerator) {
@@ -54,6 +54,7 @@ if (isRewind) {
   scrubVisibleHotdogCodes();
   await import("./live-camera-only.js?v=camera-only-1");
   await import("./public-publish-flow.js?v=publish-flow-1");
+  await import("./feed-rewind-link.js?v=rewind-3");
 } else {
   document.documentElement.classList.add("moderator-mode");
   document.body.classList.add("moderator-mode");
