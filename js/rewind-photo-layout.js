@@ -12,6 +12,10 @@ function injectPhotoLayoutStyles() {
 
     body.rewind-memory-mode::before,
     body.rewind-memory-mode::after,
+    body.rewind-memory-mode #app::before,
+    body.rewind-memory-mode #app::after,
+    body.rewind-memory-mode .rewind::before,
+    body.rewind-memory-mode .rewind::after,
     body.rewind-memory-mode .food-pattern,
     body.rewind-memory-mode .food-pattern-slow,
     body.rewind-memory-mode .food-pattern-fast {
@@ -136,8 +140,8 @@ function injectPhotoLayoutStyles() {
 
     @media (min-width: 720px) {
       body.rewind-memory-mode .rewind-photo-copy {
-        inset-left: 14px;
-        inset-right: 14px;
+        left: 14px;
+        right: 14px;
       }
     }
   `;
